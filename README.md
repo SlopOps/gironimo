@@ -342,4 +342,3 @@ Selected for quality/speed tradeoff on DGX Spark 128GB VRAM. Tall models for tal
 ---
 
 *For a certain brave giraffe who always reaches higher.* 🦒✨
-```

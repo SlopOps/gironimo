@@ -8,7 +8,7 @@ A distributed AI development system named after a very brave stuffed giraffe. Ru
 ┌─────────────────┐         Network           ┌─────────────────┐
 │     Laptop      │  ═══════════════════════► │   DGX Spark     │
 │                 │                           │                 │
-│  🦒 Gironimo    │  ──► vLLM (80B)  :8000    │  GPU Compute    │
+│  🦒 Gironimo    │  ──► vLLM (35B)  :8000    │  GPU Compute    │
 │  Orchestrator   │  ──► vLLM (Coder):8001    │  128GB VRAM     │
 │  Scout Agent    │  ──► vLLM (Vision):8002   │                 │
 │  CodeGraph      │                           │  Systemd        │
@@ -275,7 +275,7 @@ Warnings at 75% token utilization help you catch approaches that may need decomp
 
 **Structured logging** (`gironimo/logs/gironimo.log`):
 ```json
-{"timestamp": "2024-01-15T09:23:17.342891", "event": "llm_call", "model": "Qwen/Qwen3-Next-80B-A3B-Instruct-FP8", "phase": "arch", "prompt_tokens": 1247, "completion_tokens": 892, "duration_ms": 2341.5, "success": true}
+{"timestamp": "2024-01-15T09:23:17.342891", "event": "llm_call", "model": "Qwen/Qwen3.5-35B-A3B-FP8", "phase": "arch", "prompt_tokens": 1247, "completion_tokens": 892, "duration_ms": 2341.5, "success": true}
 ```
 
 **Response caching**: Expensive operations (architecture, specification) are cached to avoid re-generation on retries.
@@ -307,9 +307,9 @@ ssh $DGX_HOST nvidia-smi
 
 | Role | Model | Quantization | Speed | Purpose |
 |------|-------|--------------|-------|---------|
-| 🦒 Main | Qwen3-Next-80B-A3B-Instruct | FP8 | ~42 t/s | Spec, architecture, implementation reasoning |
-| ⚡ Coder | Qwen3-Coder-Next | int4-AutoRound | ~69 t/s | Code critique, revision, verification |
-| 👁️ Vision | Qwen2-VL-7B-Instruct | FP8 | ~60 t/s | UI validation via screenshots |
+| 🦒 Main | Qwen3.5-35B-A3B-Instruct | FP8 | ~50 t/s | Spec, architecture, implementation reasoning |
+| ⚡ Coder | Qwen3-Coder-Next-int4-AutoRound | int4 | ~69 t/s | Code critique, revision, verification |
+| 👁️ Vision | Qwen3-VL-4B-Instruct | bfloat16 | ~60 t/s | UI validation via screenshots |
 
 Selected for quality/speed tradeoff on DGX Spark 128GB VRAM. Tall models for tall tasks.
 
@@ -340,3 +340,6 @@ Selected for quality/speed tradeoff on DGX Spark 128GB VRAM. Tall models for tal
 - Prompts to create feature branch
 
 ---
+
+*For a certain brave giraffe who always reaches higher.* 🦒✨
+```

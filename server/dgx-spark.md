@@ -2,99 +2,182 @@
 
 ## Architecture Overview
 
-| Component | Location | Responsibility |
-|-----------|----------|----------------|
-| vLLM Servers (3x) | DGX Spark | Model inference, GPU compute |
-| Agent Scripts | Laptop | Orchestration, file I/O, human gates |
-| CodeGraph Index | Laptop | Code embeddings, semantic search |
-| Project Files | Laptop | Source code, specs, ADRs |
+| Component         | Location  | Responsibility                       |
+| ----------------- | --------- | ------------------------------------ |
+| vLLM Servers (3x) | DGX Spark | Model inference, GPU compute         |
+| Agent Scripts     | Laptop    | Orchestration, file I/O, human gates |
+| CodeGraph Index   | Laptop    | Code embeddings, semantic search     |
+| Project Files     | Laptop    | Source code, specs, ADRs             |
 
 ---
 
-## Persistent Model Storage (Download Once)
+# Hugging Face CLI Installation (Required)
 
-Models are stored locally at `/opt/models/` to avoid re-downloading on every restart.
+The model download script requires the **Hugging Face CLI**.
 
-### Storage Layout
+Install it once per user.
+
+## Install
+
+```bash
+curl -LsSf https://hf.co/cli/install.sh | bash
+```
+
+This installs the CLI to:
 
 ```
-/opt/models/
-├── qwen3.5-35b-a3b-fp8/         # Main agent (~70GB)
-├── qwen3-coder-next-int4/        # Coder agent (~45GB)
-└── qwen3-vl-4b/                  # Vision agent (~8GB)
+$HOME/.local/bin/hf
 ```
 
-### One-Time Download Script
+---
 
-Save as `download-models.sh` and run once:
+## Add to PATH (Current User)
+
+Ensure `$HOME/.local/bin` is in your PATH.
+
+### Bash
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+### Zsh
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+---
+
+## Verify Installation
+
+```bash
+hf --version
+```
+
+---
+
+## Login to Hugging Face
+
+Some models require authentication.
+
+```bash
+hf auth login
+```
+
+Create a token here if needed:
+
+[https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+
+---
+
+# Persistent Model Storage (Download Once)
+
+Models are stored locally at:
+
+```
+~/models/
+```
+
+This avoids re-downloading on every restart.
+
+---
+
+## Storage Layout
+
+```
+~/models/
+├── qwen3.5-35b-a3b-fp8/
+├── qwen3-coder-next-int4/
+└── qwen3-vl-4b/
+```
+
+---
+
+# One-Time Download Script
+
+Save as **download-models.sh**
 
 ```bash
 #!/bin/bash
 set -e
 
-MODEL_DIR="/opt/models"
+MODEL_DIR="$HOME/models"
 mkdir -p "$MODEL_DIR"
+
+export HF_HUB_DOWNLOAD_TIMEOUT=120
 
 echo "=== Downloading models to $MODEL_DIR ==="
 echo "Total: ~123GB. This will take a while on slow internet."
 echo ""
 
-# Main agent: Qwen3.5-35B-A3B-FP8
+if ! hf whoami > /dev/null 2>&1; then
+    echo "Please login first using: hf auth login"
+    exit 1
+fi
+
 echo "[1/3] Downloading Qwen3.5-35B-A3B-FP8..."
+
 if [ ! -d "$MODEL_DIR/qwen3.5-35b-a3b-fp8" ]; then
-    huggingface-cli download Qwen/Qwen3.5-35B-A3B-FP8 \
-        --local-dir "$MODEL_DIR/qwen3.5-35b-a3b-fp8" \
-        --local-dir-use-symlinks False
+    hf download Qwen/Qwen3.5-35B-A3B-FP8 \
+        --local-dir "$MODEL_DIR/qwen3.5-35b-a3b-fp8"
 else
-    echo "    Already exists, skipping."
+    echo "Already exists, skipping."
 fi
 
-# Coder agent: Qwen3-Coder-Next-int4-AutoRound
 echo "[2/3] Downloading Qwen3-Coder-Next-int4-AutoRound..."
+
 if [ ! -d "$MODEL_DIR/qwen3-coder-next-int4" ]; then
-    huggingface-cli download Qwen/Qwen3-Coder-Next-int4-AutoRound \
-        --local-dir "$MODEL_DIR/qwen3-coder-next-int4" \
-        --local-dir-use-symlinks False
+    hf download Intel/Qwen3-Coder-Next-int4-AutoRound \
+        --local-dir "$MODEL_DIR/qwen3-coder-next-int4"
 else
-    echo "    Already exists, skipping."
+    echo "Already exists, skipping."
 fi
 
-# Vision agent: Qwen3-VL-4B-Instruct
 echo "[3/3] Downloading Qwen3-VL-4B-Instruct..."
+
 if [ ! -d "$MODEL_DIR/qwen3-vl-4b" ]; then
-    huggingface-cli download Qwen/Qwen3-VL-4B-Instruct \
-        --local-dir "$MODEL_DIR/qwen3-vl-4b" \
-        --local-dir-use-symlinks False
+    hf download Qwen/Qwen3-VL-4B-Instruct \
+        --local-dir "$MODEL_DIR/qwen3-vl-4b"
 else
-    echo "    Already exists, skipping."
+    echo "Already exists, skipping."
 fi
 
 echo ""
-echo "=== All models downloaded! ==="
-echo "Total size: $(du -sh $MODEL_DIR | cut -f1)"
-echo ""
-echo "Disk check: Ensure /opt has at least 150GB free (models + cache)"
-df -h /opt
+echo "=== All models downloaded ==="
+echo "Total size: $(du -sh "$MODEL_DIR" | cut -f1)"
+
+df -h "$HOME"
 ```
 
-**Run it:**
+---
+
+## Run the Script
+
 ```bash
 chmod +x download-models.sh
-sudo mkdir -p /opt/models && sudo chown $USER:$USER /opt/models
 ./download-models.sh
 ```
 
-### API Key Setup (One-Time)
+---
+
+# API Key Setup (One-Time)
 
 ```bash
-# Generate unique keys for each service
 mkdir -p ~/.keys
+
 openssl rand -hex 32 > ~/.keys/vllm_main_key
 openssl rand -hex 32 > ~/.keys/vllm_coder_key
 openssl rand -hex 32 > ~/.keys/vllm_vision_key
-chmod 600 ~/.keys/*
 
-# Symlinks for systemd
+chmod 600 ~/.keys/*
+```
+
+Create symlinks used by systemd:
+
+```bash
 ln -sf ~/.keys/vllm_main_key ~/.vllm_main_key
 ln -sf ~/.keys/vllm_coder_key ~/.vllm_coder_key
 ln -sf ~/.keys/vllm_vision_key ~/.vllm_vision_key
@@ -102,11 +185,21 @@ ln -sf ~/.keys/vllm_vision_key ~/.vllm_vision_key
 
 ---
 
-## DGX Spark: Systemd Services
+# DGX Spark: Systemd Services
 
-Create these three files in `/etc/systemd/system/`:
+Create these files in:
 
-### `/etc/systemd/system/vllm-main.service`
+```
+/etc/systemd/system/
+```
+
+---
+
+# vllm-main.service
+
+```
+/etc/systemd/system/vllm-main.service
+```
 
 ```ini
 [Unit]
@@ -115,22 +208,18 @@ After=network.target
 
 [Service]
 Type=simple
-User=youruser
-WorkingDirectory=/home/youruser/agent-stack
+User=%u
+WorkingDirectory=%h/Documents/gironimo/server
 
-# Prevent swapping
 LimitMEMLOCK=infinity
-
-# Logging - don't drop lines
 LogRateLimitIntervalSec=0
 
-# Thread control - prevent oversubscription
-Environment="PATH=/home/youruser/agent-stack/.venv/bin:/usr/local/bin:/usr/bin"
+Environment="PATH=%h/Documents/gironimo/server/.venv/bin:/usr/local/bin:/usr/bin"
 Environment="CUDA_VISIBLE_DEVICES=0"
 Environment="PYTHONUNBUFFERED=1"
 Environment="VLLM_LOGGING_LEVEL=warning"
-Environment="HF_HOME=/opt/models/.cache/huggingface"
-Environment="VLLM_API_KEY_FILE=/home/youruser/.vllm_main_key"
+Environment="HF_HOME=%h/models/.cache/huggingface"
+Environment="VLLM_API_KEY_FILE=%h/.vllm_main_key"
 Environment="VLLM_MARLIN_USE_ATOMIC_ADD=1"
 Environment="VLLM_ATTENTION_BACKEND=FLASHINFER"
 Environment="VLLM_CUDA_GRAPH_MODE=full_and_piecewise"
@@ -141,11 +230,10 @@ Environment="MKL_NUM_THREADS=8"
 Environment="NUMEXPR_NUM_THREADS=8"
 Environment="TOKENIZERS_PARALLELISM=false"
 
-# Main gets priority memory for reasoning/spec/architecture
-ExecStart=/home/youruser/agent-stack/.venv/bin/python -m vllm.entrypoints.openai.api_server \
-  --model /opt/models/qwen3.5-35b-a3b-fp8 \
+ExecStart=%h/Documents/gironimo/server/.venv/bin/python -m vllm.entrypoints.openai.api_server \
+  --model %h/models/qwen3.5-35b-a3b-fp8 \
   --served-model-name Qwen/Qwen3.5-35B-A3B-FP8 \
-  --download-dir /opt/models \
+  --download-dir %h/models \
   --port 8000 \
   --host 0.0.0.0 \
   --quantization fp8 \
@@ -167,18 +255,22 @@ ExecStart=/home/youruser/agent-stack/.venv/bin/python -m vllm.entrypoints.openai
 
 Restart=always
 RestartSec=5
-StartLimitInterval=60s
-StartLimitBurst=3
 
 ExecStartPost=/bin/bash -c 'for i in {1..60}; do \
-    curl -sf -H "Authorization: Bearer $(cat /home/youruser/.vllm_main_key)" \
-    http://localhost:8000/health && exit 0; sleep 2; done; exit 1'
+curl -sf -H "Authorization: Bearer $(cat %h/.vllm_main_key)" \
+http://localhost:8000/health && exit 0; sleep 2; done; exit 1'
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-### `/etc/systemd/system/vllm-coder.service`
+---
+
+# vllm-coder.service
+
+```
+/etc/systemd/system/vllm-coder.service
+```
 
 ```ini
 [Unit]
@@ -187,18 +279,18 @@ After=network.target vllm-main.service
 
 [Service]
 Type=simple
-User=youruser
-WorkingDirectory=/home/youruser/agent-stack
+User=%u
+WorkingDirectory=%h/Documents/gironimo/server
 
 LimitMEMLOCK=infinity
 LogRateLimitIntervalSec=0
 
-Environment="PATH=/home/youruser/agent-stack/.venv/bin:/usr/local/bin:/usr/bin"
+Environment="PATH=%h/Documents/gironimo/server/.venv/bin:/usr/local/bin:/usr/bin"
 Environment="CUDA_VISIBLE_DEVICES=0"
 Environment="PYTHONUNBUFFERED=1"
 Environment="VLLM_LOGGING_LEVEL=warning"
-Environment="HF_HOME=/opt/models/.cache/huggingface"
-Environment="VLLM_API_KEY_FILE=/home/youruser/.vllm_coder_key"
+Environment="HF_HOME=%h/models/.cache/huggingface"
+Environment="VLLM_API_KEY_FILE=%h/.vllm_coder_key"
 Environment="VLLM_MARLIN_USE_ATOMIC_ADD=1"
 Environment="VLLM_ATTENTION_BACKEND=FLASHINFER"
 Environment="VLLM_CUDA_GRAPH_MODE=full_and_piecewise"
@@ -209,10 +301,10 @@ Environment="MKL_NUM_THREADS=8"
 Environment="NUMEXPR_NUM_THREADS=8"
 Environment="TOKENIZERS_PARALLELISM=false"
 
-ExecStart=/home/youruser/agent-stack/.venv/bin/python -m vllm.entrypoints.openai.api_server \
-  --model /opt/models/qwen3-coder-next-int4 \
+ExecStart=%h/Documents/gironimo/server/.venv/bin/python -m vllm.entrypoints.openai.api_server \
+  --model %h/models/qwen3-coder-next-int4 \
   --served-model-name Qwen/Qwen3-Coder-Next-int4-AutoRound \
-  --download-dir /opt/models \
+  --download-dir %h/models \
   --port 8001 \
   --host 0.0.0.0 \
   --quantization int4 \
@@ -230,18 +322,15 @@ ExecStart=/home/youruser/agent-stack/.venv/bin/python -m vllm.entrypoints.openai
 
 Restart=always
 RestartSec=5
-StartLimitInterval=60s
-StartLimitBurst=3
-
-ExecStartPost=/bin/bash -c 'for i in {1..60}; do \
-    curl -sf -H "Authorization: Bearer $(cat /home/youruser/.vllm_coder_key)" \
-    http://localhost:8001/health && exit 0; sleep 2; done; exit 1'
-
-[Install]
-WantedBy=multi-user.target
 ```
 
-### `/etc/systemd/system/vllm-vision.service`
+---
+
+# vllm-vision.service
+
+```
+/etc/systemd/system/vllm-vision.service
+```
 
 ```ini
 [Unit]
@@ -250,18 +339,18 @@ After=network.target vllm-main.service vllm-coder.service
 
 [Service]
 Type=simple
-User=youruser
-WorkingDirectory=/home/youruser/agent-stack
+User=%u
+WorkingDirectory=%h/Documents/gironimo/server
 
 LimitMEMLOCK=infinity
 LogRateLimitIntervalSec=0
 
-Environment="PATH=/home/youruser/agent-stack/.venv/bin:/usr/local/bin:/usr/bin"
+Environment="PATH=%h/Documents/gironimo/server/.venv/bin:/usr/local/bin:/usr/bin"
 Environment="CUDA_VISIBLE_DEVICES=0"
 Environment="PYTHONUNBUFFERED=1"
 Environment="VLLM_LOGGING_LEVEL=warning"
-Environment="HF_HOME=/opt/models/.cache/huggingface"
-Environment="VLLM_API_KEY_FILE=/home/youruser/.vllm_vision_key"
+Environment="HF_HOME=%h/models/.cache/huggingface"
+Environment="VLLM_API_KEY_FILE=%h/.vllm_vision_key"
 Environment="VLLM_ATTENTION_BACKEND=FLASHINFER"
 Environment="VLLM_CUDA_GRAPH_MODE=full_and_piecewise"
 Environment="VLLM_WORKER_MULTIPROC_METHOD=spawn"
@@ -271,10 +360,10 @@ Environment="MKL_NUM_THREADS=8"
 Environment="NUMEXPR_NUM_THREADS=8"
 Environment="TOKENIZERS_PARALLELISM=false"
 
-ExecStart=/home/youruser/agent-stack/.venv/bin/python -m vllm.entrypoints.openai.api_server \
-  --model /opt/models/qwen3-vl-4b \
+ExecStart=%h/Documents/gironimo/server/.venv/bin/python -m vllm.entrypoints.openai.api_server \
+  --model %h/models/qwen3-vl-4b \
   --served-model-name Qwen/Qwen3-VL-4B-Instruct \
-  --download-dir /opt/models \
+  --download-dir %h/models \
   --port 8002 \
   --host 0.0.0.0 \
   --dtype bfloat16 \
@@ -288,59 +377,54 @@ ExecStart=/home/youruser/agent-stack/.venv/bin/python -m vllm.entrypoints.openai
 
 Restart=always
 RestartSec=5
-StartLimitInterval=60s
-StartLimitBurst=3
-
-ExecStartPost=/bin/bash -c 'for i in {1..60}; do \
-    curl -sf -H "Authorization: Bearer $(cat /home/youruser/.vllm_vision_key)" \
-    http://localhost:8002/health && exit 0; sleep 2; done; exit 1'
-
-[Install]
-WantedBy=multi-user.target
 ```
 
-### Enable and Start
+---
+
+# Enable and Start Services
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable vllm-main vllm-coder vllm-vision
 sudo systemctl start vllm-main vllm-coder vllm-vision
+```
 
-# Check status
+---
+
+## Check Status
+
+```bash
 sudo systemctl status vllm-main vllm-coder vllm-vision
+```
 
-# View logs (no rate limiting)
+---
+
+## View Logs
+
+```bash
 sudo journalctl -u vllm-main -f
+```
 
-# Check GPU memory
+---
+
+## Check GPU Memory
+
+```bash
 watch -n 1 nvidia-smi
 ```
 
-### Test with API Key
+---
+
+# Test API
 
 ```bash
 curl -H "Authorization: Bearer $(cat ~/.vllm_main_key)" \
-     http://localhost:8000/v1/models
-
-# Test tool calling
-curl -H "Authorization: Bearer $(cat ~/.vllm_main_key)" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "model": "Qwen/Qwen3.5-35B-A3B-FP8",
-       "messages": [{"role": "user", "content": "Generate a spec for OAuth2"}],
-       "tools": [{
-         "type": "function",
-         "function": {
-           "name": "generate_spec",
-           "description": "Create a specification document",
-           "parameters": {"type": "object", "properties": {"title": {"type": "string"}}}
-         }
-       }]
-     }' \
-     http://localhost:8000/v1/chat/completions
+http://localhost:8000/v1/models
 ```
 
-### Firewall
+---
+
+# Firewall
 
 ```bash
 sudo ufw allow 8000/tcp
@@ -350,24 +434,24 @@ sudo ufw allow 8002/tcp
 
 ---
 
-## Model Summary
+# Model Summary
 
-| Agent | Model | Local Path | Size | GPU Mem | Swap | Est. VRAM | Key Optimizations |
-|-------|-------|------------|------|---------|------|-----------|-------------------|
-| **Main** | Qwen3.5-35B-A3B-FP8 | `/opt/models/qwen3.5-35b-a3b-fp8` | ~70GB | **0.55** | 16GB | **~70GB** | 262K context, swap safety |
-| Coder | Qwen3-Coder-Next-int4 | `/opt/models/qwen3-coder-next-int4` | ~45GB | 0.33 | 16GB | ~42GB | 262K context, swap safety |
-| Vision | Qwen3-VL-4B-Instruct | `/opt/models/qwen3-vl-4b` | ~8GB | 0.05 | - | ~6GB | `--enforce-eager`, bfloat16 |
-| **Total** | | | **~123GB** | **0.93** | **32GB** | **~118GB** | **~10GB headroom** ✅ |
+| Agent     | Model                 | Path                             | Size       | GPU Mem  | Swap     | Est VRAM   |
+| --------- | --------------------- | -------------------------------- | ---------- | -------- | -------- | ---------- |
+| Main      | Qwen3.5-35B-A3B-FP8   | `~/models/qwen3.5-35b-a3b-fp8`   | ~70GB      | 0.55     | 16GB     | ~70GB      |
+| Coder     | Qwen3-Coder-Next-int4 | `~/models/qwen3-coder-next-int4` | ~45GB      | 0.33     | 16GB     | ~42GB      |
+| Vision    | Qwen3-VL-4B           | `~/models/qwen3-vl-4b`           | ~8GB       | 0.05     | -        | ~6GB       |
+| **Total** |                       |                                  | **~123GB** | **0.93** | **32GB** | **~118GB** |
 
 ---
 
-## Environment Variables Summary
+# Environment Variables Summary
 
-| Variable | Value | Purpose |
-|----------|-------|---------|
-| `OMP_NUM_THREADS` | 8 | OpenMP parallelism |
-| `MKL_NUM_THREADS` | 8 | Intel MKL BLAS threads |
-| `NUMEXPR_NUM_THREADS` | 8 | NumExpr math threads |
-| `TOKENIZERS_PARALLELISM` | false | Prevents tokenizer deadlock |
-| `CUDA_DEVICE_MAX_CONNECTIONS` | 1 | Reduces scheduler thrash |
-| `VLLM_WORKER_MULTIPROC_METHOD` | spawn | Safer multiprocessing |
+| Variable                       | Value | Purpose                    |
+| ------------------------------ | ----- | -------------------------- |
+| `OMP_NUM_THREADS`              | 8     | OpenMP parallelism         |
+| `MKL_NUM_THREADS`              | 8     | BLAS thread control        |
+| `NUMEXPR_NUM_THREADS`          | 8     | NumExpr thread limit       |
+| `TOKENIZERS_PARALLELISM`       | false | Prevent tokenizer deadlock |
+| `CUDA_DEVICE_MAX_CONNECTIONS`  | 1     | Reduce scheduler thrash    |
+| `VLLM_WORKER_MULTIPROC_METHOD` | spawn | Safe multiprocessing       |

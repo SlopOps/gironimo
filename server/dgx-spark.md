@@ -160,6 +160,7 @@ Create symlinks used by systemd:
 sudo ln -sf ~/.keys/vllm_main_key /root/.vllm_main_key
 sudo ln -sf ~/.keys/vllm_coder_key /root/.vllm_coder_key
 sudo ln -sf ~/.keys/vllm_vision_key /root/.vllm_vision_key
+sudo ln -sf ~/models /root/models
 ```
 
 ---

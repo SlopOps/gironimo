@@ -51,6 +51,14 @@ docker run --rm --runtime=nvidia --gpus all nvidia/cuda:12.8.0-base-ubuntu22.04 
 
 ---
 
+## Enable Docker on Boot (Required)
+
+```bash
+sudo systemctl enable docker
+```
+
+---
+
 # Docker Network
 
 ```bash
@@ -59,13 +67,9 @@ docker network create vllm-net
 
 ---
 
----
-
 # Hugging Face CLI Installation (Required)
 
 The model download script requires the **Hugging Face CLI**.
-
-Install it once per user.
 
 ## Install
 
@@ -73,7 +77,7 @@ Install it once per user.
 curl -LsSf https://hf.co/cli/install.sh | bash
 ```
 
-This installs the CLI to:
+This installs to:
 
 ```
 $HOME/.local/bin/hf
@@ -81,9 +85,7 @@ $HOME/.local/bin/hf
 
 ---
 
-## Add to PATH (Current User)
-
-Ensure `$HOME/.local/bin` is in your PATH.
+## Add to PATH
 
 ### Bash
 
@@ -101,7 +103,7 @@ source ~/.zshrc
 
 ---
 
-## Verify Installation
+## Verify
 
 ```bash
 hf --version
@@ -109,29 +111,19 @@ hf --version
 
 ---
 
-## Login to Hugging Face
-
-Some models require authentication.
+## Login
 
 ```bash
 hf auth login
 ```
 
-Create a token here if needed:
-
-[https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
-
 ---
 
-# Persistent Model Storage (Download Once)
-
-Models are stored locally at:
+# Persistent Model Storage
 
 ```
 ~/models/
 ```
-
-This avoids re-downloading on every restart.
 
 ---
 
@@ -148,8 +140,6 @@ This avoids re-downloading on every restart.
 
 # One-Time Download Script
 
-Save as **download-models.sh**
-
 ```bash
 #!/bin/bash
 set -e
@@ -159,61 +149,21 @@ mkdir -p "$MODEL_DIR"
 
 export HF_HUB_DOWNLOAD_TIMEOUT=120
 
-echo "=== Downloading models to $MODEL_DIR ==="
-echo "Total: ~123GB. This will take a while on slow internet."
-echo ""
-
 if ! hf whoami > /dev/null 2>&1; then
-    echo "Please login first using: hf auth login"
+    echo "Run: hf auth login"
     exit 1
 fi
 
-echo "[1/3] Downloading Qwen3.5-35B-A3B-FP8..."
+hf download Qwen/Qwen3.5-35B-A3B-FP8 --local-dir "$MODEL_DIR/qwen3.5-35b-a3b-fp8"
+hf download Intel/Qwen3-Coder-Next-int4-AutoRound --local-dir "$MODEL_DIR/qwen3-coder-next-int4"
+hf download Qwen/Qwen3-VL-4B-Instruct --local-dir "$MODEL_DIR/qwen3-vl-4b"
 
-if [ ! -d "$MODEL_DIR/qwen3.5-35b-a3b-fp8" ]; then
-    hf download Qwen/Qwen3.5-35B-A3B-FP8 \
-        --local-dir "$MODEL_DIR/qwen3.5-35b-a3b-fp8"
-else
-    echo "Already exists, skipping."
-fi
-
-echo "[2/3] Downloading Qwen3-Coder-Next-int4-AutoRound..."
-
-if [ ! -d "$MODEL_DIR/qwen3-coder-next-int4" ]; then
-    hf download Intel/Qwen3-Coder-Next-int4-AutoRound \
-        --local-dir "$MODEL_DIR/qwen3-coder-next-int4"
-else
-    echo "Already exists, skipping."
-fi
-
-echo "[3/3] Downloading Qwen3-VL-4B-Instruct..."
-
-if [ ! -d "$MODEL_DIR/qwen3-vl-4b" ]; then
-    hf download Qwen/Qwen3-VL-4B-Instruct \
-        --local-dir "$MODEL_DIR/qwen3-vl-4b"
-else
-    echo "Already exists, skipping."
-fi
-
-echo ""
-echo "=== All models downloaded ==="
-echo "Total size: $(du -sh "$MODEL_DIR" | cut -f1)"
-
-df -h "$HOME"
+du -sh "$MODEL_DIR"
 ```
 
 ---
 
-## Run the Script
-
-```bash
-chmod +x download-models.sh
-./download-models.sh
-```
-
----
-
-# API Key Setup (One-Time)
+# API Keys
 
 ```bash
 mkdir -p ~/.keys
@@ -225,12 +175,12 @@ openssl rand -hex 32 > ~/.keys/vllm_vision_key
 chmod 600 ~/.keys/*
 ```
 
-Create symlinks used by systemd:
+---
+
+# Pull vLLM Image (Required)
 
 ```bash
-ln -sf ~/.keys/vllm_main_key ~/.vllm_main_key
-ln -sf ~/.keys/vllm_coder_key ~/.vllm_coder_key
-ln -sf ~/.keys/vllm_vision_key ~/.vllm_vision_key
+docker pull vllm/vllm-openai:v0.17.1-cu130
 ```
 
 ---
@@ -243,7 +193,7 @@ ln -sf ~/.keys/vllm_vision_key ~/.vllm_vision_key
 
 ```ini
 [Unit]
-Description=vLLM Main Agent (Qwen3.5-35B-A3B-FP8) - Docker
+Description=vLLM Main Agent - Docker
 After=network.target docker.target
 Requires=docker.target
 
@@ -269,6 +219,7 @@ ExecStart=/usr/bin/docker run \
   --ulimit stack=67108864 \
   -e CUDA_VISIBLE_DEVICES=0 \
   -e PYTHONUNBUFFERED=1 \
+  -e VLLM_LOGGING_LEVEL=warning \
   -e HF_HOME=/root/.cache/huggingface \
   -e VLLM_API_KEY=$$(cat %h/.vllm_main_key) \
   -e VLLM_MARLIN_USE_ATOMIC_ADD=1 \
@@ -282,6 +233,7 @@ ExecStart=/usr/bin/docker run \
   -e TOKENIZERS_PARALLELISM=false \
   vllm/vllm-openai:v0.17.1-cu130 \
   --model /models/qwen3.5-35b-a3b-fp8 \
+  --download-dir /models \
   --served-model-name Qwen/Qwen3.5-35B-A3B-FP8 \
   --port 8000 \
   --host 0.0.0.0 \
@@ -324,7 +276,7 @@ Type=simple
 User=%u
 Restart=always
 RestartSec=10
-TimeoutStartSec=600   # Add this line
+TimeoutStartSec=600
 
 ExecStart=/usr/bin/docker run \
   --pull=never \
@@ -341,6 +293,7 @@ ExecStart=/usr/bin/docker run \
   --ulimit stack=67108864 \
   -e CUDA_VISIBLE_DEVICES=0 \
   -e PYTHONUNBUFFERED=1 \
+  -e VLLM_LOGGING_LEVEL=warning \
   -e HF_HOME=/root/.cache/huggingface \
   -e VLLM_API_KEY=$$(cat %h/.vllm_coder_key) \
   -e VLLM_MARLIN_USE_ATOMIC_ADD=1 \
@@ -354,6 +307,7 @@ ExecStart=/usr/bin/docker run \
   -e TOKENIZERS_PARALLELISM=false \
   vllm/vllm-openai:v0.17.1-cu130 \
   --model /models/qwen3-coder-next-int4 \
+  --download-dir /models \
   --served-model-name Qwen/Qwen3-Coder-Next-int4-AutoRound \
   --port 8001 \
   --host 0.0.0.0 \
@@ -393,7 +347,7 @@ Type=simple
 User=%u
 Restart=always
 RestartSec=10
-TimeoutStartSec=600   # Add this line
+TimeoutStartSec=600
 
 ExecStart=/usr/bin/docker run \
   --pull=never \
@@ -410,6 +364,7 @@ ExecStart=/usr/bin/docker run \
   --ulimit stack=67108864 \
   -e CUDA_VISIBLE_DEVICES=0 \
   -e PYTHONUNBUFFERED=1 \
+  -e VLLM_LOGGING_LEVEL=warning \
   -e HF_HOME=/root/.cache/huggingface \
   -e VLLM_API_KEY=$$(cat %h/.vllm_vision_key) \
   -e VLLM_ATTENTION_BACKEND=FLASHINFER \
@@ -421,11 +376,13 @@ ExecStart=/usr/bin/docker run \
   -e TOKENIZERS_PARALLELISM=false \
   vllm/vllm-openai:v0.17.1-cu130 \
   --model /models/qwen3-vl-4b \
+  --download-dir /models \
   --served-model-name Qwen/Qwen3-VL-4B-Instruct \
   --port 8002 \
   --host 0.0.0.0 \
   --dtype bfloat16 \
   --load-format fastsafetensors \
+  --attention-backend flashinfer \
   --gpu-memory-utilization 0.05 \
   --max-model-len 32768 \
   --max-num-batched-tokens 4096 \
@@ -439,4 +396,14 @@ ExecStop=/usr/bin/docker stop vllm-vision
 
 [Install]
 WantedBy=multi-user.target
+```
+
+---
+
+## Enable + Start
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable vllm-main vllm-coder vllm-vision
+sudo systemctl start vllm-main vllm-coder vllm-vision
 ```

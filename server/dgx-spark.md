@@ -46,7 +46,7 @@ newgrp docker  # or log out and back in
 # Docker Network
 
 ```bash
-docker network create vllm-net
+docker network create vllm-net || true
 ```
 
 ---

@@ -191,7 +191,7 @@ Requires=docker.service
 
 [Service]
 Type=simple
-User=%u
+User=root
 Restart=always
 RestartSec=10
 TimeoutStartSec=600
@@ -204,8 +204,8 @@ ExecStart=/usr/bin/docker run \
   --gpus all \
   --network vllm-net \
   -p 8000:8000 \
-  -v %h/models:/root/.cache/huggingface \
-  -v %h/models:/models \
+  -v /root/models:/root/.cache/huggingface \
+  -v /root/models:/models \
   --ipc=host \
   --shm-size=32g \
   --ulimit memlock=-1 \
@@ -214,7 +214,7 @@ ExecStart=/usr/bin/docker run \
   -e PYTHONUNBUFFERED=1 \
   -e VLLM_LOGGING_LEVEL=warning \
   -e HF_HOME=/root/.cache/huggingface \
-  -e VLLM_API_KEY=$$(cat %h/.vllm_main_key) \
+  -e VLLM_API_KEY=$(cat /root/.vllm_main_key) \
   -e VLLM_MARLIN_USE_ATOMIC_ADD=1 \
   -e VLLM_ATTENTION_BACKEND=FLASHINFER \
   -e VLLM_CUDA_GRAPH_MODE=full_and_piecewise \
@@ -232,7 +232,6 @@ ExecStart=/usr/bin/docker run \
   --host 0.0.0.0 \
   --quantization fp8 \
   --kv-cache-dtype fp8 \
-  --load-format fastsafetensors \
   --attention-backend flashinfer \
   --gpu-memory-utilization 0.55 \
   --swap-space 16 \
@@ -247,7 +246,7 @@ ExecStart=/usr/bin/docker run \
   --mamba-ssm-cache-dtype float16 \
   --trust-remote-code
 
-ExecStartPost=/bin/bash -c 'for i in {1..60}; do curl -sf -H "Authorization: Bearer $(cat %h/.vllm_main_key)" http://localhost:8000/health && exit 0; sleep 2; done; exit 1'
+ExecStartPost=/bin/bash -c 'for i in {1..60}; do curl -sf -H "Authorization: Bearer $(cat /root/.vllm_main_key)" http://localhost:8000/health && exit 0; sleep 2; done; exit 1'
 ExecStop=/usr/bin/docker stop vllm-main || true
 
 [Install]

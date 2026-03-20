@@ -302,7 +302,7 @@ ExecStart=/usr/bin/docker run \
   --mamba-ssm-cache-dtype float16 \
   --trust-remote-code
 
-ExecStartPost=/bin/bash -c 'for i in {1..60}; do curl -sf http://localhost:8000/health && exit 0; sleep 2; done; exit 1'
+ExecStartPost=/bin/bash -c 'for i in {1..60}; do curl -sf -H "Authorization: Bearer $(cat %h/.vllm_main_key)" http://localhost:8000/health && exit 0; sleep 2; done; exit 1'
 ExecStop=/usr/bin/docker stop vllm-main
 
 [Install]
@@ -324,6 +324,7 @@ Type=simple
 User=%u
 Restart=always
 RestartSec=10
+TimeoutStartSec=600   # Add this line
 
 ExecStart=/usr/bin/docker run \
   --pull=never \
@@ -370,6 +371,7 @@ ExecStart=/usr/bin/docker run \
   --tool-call-parser qwen3_coder \
   --trust-remote-code
 
+ExecStartPost=/bin/bash -c 'for i in {1..60}; do curl -sf -H "Authorization: Bearer $(cat %h/.vllm_coder_key)" http://localhost:8001/health && exit 0; sleep 2; done; exit 1'
 ExecStop=/usr/bin/docker stop vllm-coder
 
 [Install]
@@ -391,6 +393,7 @@ Type=simple
 User=%u
 Restart=always
 RestartSec=10
+TimeoutStartSec=600   # Add this line
 
 ExecStart=/usr/bin/docker run \
   --pull=never \
@@ -431,6 +434,7 @@ ExecStart=/usr/bin/docker run \
   --enforce-eager \
   --trust-remote-code
 
+ExecStartPost=/bin/bash -c 'for i in {1..60}; do curl -sf -H "Authorization: Bearer $(cat %h/.vllm_vision_key)" http://localhost:8002/health && exit 0; sleep 2; done; exit 1'
 ExecStop=/usr/bin/docker stop vllm-vision
 
 [Install]

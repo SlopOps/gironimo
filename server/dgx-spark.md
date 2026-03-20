@@ -242,7 +242,7 @@ ExecStart=/usr/bin/docker run \
   --enable-prefix-caching \
   --enable-auto-tool-choice \
   --tool-call-parser qwen3_coder \
-  --reasoning-parser qwen \
+  --reasoning-parser qwen3 \
   --mamba-ssm-cache-dtype float16 \
   --trust-remote-code
 

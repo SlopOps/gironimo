@@ -197,56 +197,11 @@ RestartSec=10
 TimeoutStartSec=600
 TimeoutStopSec=120
 
-ExecStart=/usr/bin/docker run \
-  --rm \
-  --pull=never \
-  --name vllm-main \
-  --gpus all \
-  --network vllm-net \
-  -p 8000:8000 \
-  -v /root/models:/root/.cache/huggingface \
-  -v /root/models:/models \
-  --ipc=host \
-  --shm-size=32g \
-  --ulimit memlock=-1 \
-  --ulimit stack=67108864 \
-  -e CUDA_VISIBLE_DEVICES=0 \
-  -e PYTHONUNBUFFERED=1 \
-  -e VLLM_LOGGING_LEVEL=warning \
-  -e HF_HOME=/root/.cache/huggingface \
-  -e VLLM_API_KEY=$(cat /root/.vllm_main_key) \
-  -e VLLM_MARLIN_USE_ATOMIC_ADD=1 \
-  -e VLLM_ATTENTION_BACKEND=FLASHINFER \
-  -e VLLM_CUDA_GRAPH_MODE=full_and_piecewise \
-  -e VLLM_WORKER_MULTIPROC_METHOD=spawn \
-  -e CUDA_DEVICE_MAX_CONNECTIONS=1 \
-  -e OMP_NUM_THREADS=8 \
-  -e MKL_NUM_THREADS=8 \
-  -e NUMEXPR_NUM_THREADS=8 \
-  -e TOKENIZERS_PARALLELISM=false \
-  vllm/vllm-openai:v0.17.1-cu130 \
-  --model /models/qwen3.5-35b-a3b-fp8 \
-  --download-dir /models \
-  --served-model-name Qwen/Qwen3.5-35B-A3B-FP8 \
-  --port 8000 \
-  --host 0.0.0.0 \
-  --quantization fp8 \
-  --kv-cache-dtype fp8 \
-  --attention-backend flashinfer \
-  --gpu-memory-utilization 0.55 \
-  --swap-space 16 \
-  --max-model-len 262144 \
-  --max-num-batched-tokens 32768 \
-  --max-num-seqs 4 \
-  --max-cudagraph-capture-size 10 \
-  --enable-prefix-caching \
-  --enable-auto-tool-choice \
-  --tool-call-parser qwen3_coder \
-  --reasoning-parser qwen3 \
-  --mamba-ssm-cache-dtype float16 \
-  --trust-remote-code
+ExecStartPre=-/usr/bin/docker rm -f vllm-main
 
-ExecStartPost=/bin/bash -c 'for i in {1..60}; do curl -sf -H "Authorization: Bearer $(cat /root/.vllm_main_key)" http://localhost:8000/health && exit 0; sleep 2; done; exit 1'
+ExecStart=/usr/bin/docker run --rm --pull=never --name vllm-main --gpus all --network vllm-net -p 8000:8000 -v /root/models:/root/.cache/huggingface -v /root/models:/models --ipc=host --shm-size=32g --ulimit memlock=-1 --ulimit stack=67108864 -e CUDA_VISIBLE_DEVICES=0 -e PYTHONUNBUFFERED=1 -e VLLM_LOGGING_LEVEL=warning -e HF_HOME=/root/.cache/huggingface -e VLLM_API_KEY_FILE=/root/.vllm_main_key -e VLLM_MARLIN_USE_ATOMIC_ADD=1 -e VLLM_ATTENTION_BACKEND=FLASHINFER -e VLLM_CUDA_GRAPH_MODE=full_and_piecewise -e VLLM_WORKER_MULTIPROC_METHOD=spawn -e CUDA_DEVICE_MAX_CONNECTIONS=1 -e OMP_NUM_THREADS=8 -e MKL_NUM_THREADS=8 -e NUMEXPR_NUM_THREADS=8 -e TOKENIZERS_PARALLELISM=false vllm/vllm-openai:v0.17.1-cu130 --model /models/qwen3.5-35b-a3b-fp8 --download-dir /models --served-model-name Qwen/Qwen3.5-35B-A3B-FP8 --port 8000 --host 0.0.0.0 --quantization fp8 --kv-cache-dtype fp8 --attention-backend flashinfer --gpu-memory-utilization 0.55 --swap-space 16 --max-model-len 262144 --max-num-batched-tokens 32768 --max-num-seqs 4 --max-cudagraph-capture-size 10 --enable-prefix-caching --enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --mamba-ssm-cache-dtype float16 --trust-remote-code
+
+ExecStartPost=/bin/bash -c 'for i in {1..300}; do curl -sf -H "Authorization: Bearer $(cat /root/.vllm_main_key)" http://localhost:8000/health && exit 0; sleep 2; done; exit 1'
 ExecStop=/usr/bin/docker stop vllm-main || true
 
 [Install]

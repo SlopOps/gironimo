@@ -172,7 +172,9 @@ docker pull vllm/vllm-openai:v0.17.1-cu130
 ---
 
 # Systemd Services
+Create these files in:
 
+/etc/systemd/system/
 ---
 
 ## vllm-main.service

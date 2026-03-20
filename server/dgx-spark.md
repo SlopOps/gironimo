@@ -59,6 +59,182 @@ docker network create vllm-net
 
 ---
 
+---
+
+# Hugging Face CLI Installation (Required)
+
+The model download script requires the **Hugging Face CLI**.
+
+Install it once per user.
+
+## Install
+
+```bash
+curl -LsSf https://hf.co/cli/install.sh | bash
+```
+
+This installs the CLI to:
+
+```
+$HOME/.local/bin/hf
+```
+
+---
+
+## Add to PATH (Current User)
+
+Ensure `$HOME/.local/bin` is in your PATH.
+
+### Bash
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+### Zsh
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+---
+
+## Verify Installation
+
+```bash
+hf --version
+```
+
+---
+
+## Login to Hugging Face
+
+Some models require authentication.
+
+```bash
+hf auth login
+```
+
+Create a token here if needed:
+
+[https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+
+---
+
+# Persistent Model Storage (Download Once)
+
+Models are stored locally at:
+
+```
+~/models/
+```
+
+This avoids re-downloading on every restart.
+
+---
+
+## Storage Layout
+
+```
+~/models/
+├── qwen3.5-35b-a3b-fp8/
+├── qwen3-coder-next-int4/
+└── qwen3-vl-4b/
+```
+
+---
+
+# One-Time Download Script
+
+Save as **download-models.sh**
+
+```bash
+#!/bin/bash
+set -e
+
+MODEL_DIR="$HOME/models"
+mkdir -p "$MODEL_DIR"
+
+export HF_HUB_DOWNLOAD_TIMEOUT=120
+
+echo "=== Downloading models to $MODEL_DIR ==="
+echo "Total: ~123GB. This will take a while on slow internet."
+echo ""
+
+if ! hf whoami > /dev/null 2>&1; then
+    echo "Please login first using: hf auth login"
+    exit 1
+fi
+
+echo "[1/3] Downloading Qwen3.5-35B-A3B-FP8..."
+
+if [ ! -d "$MODEL_DIR/qwen3.5-35b-a3b-fp8" ]; then
+    hf download Qwen/Qwen3.5-35B-A3B-FP8 \
+        --local-dir "$MODEL_DIR/qwen3.5-35b-a3b-fp8"
+else
+    echo "Already exists, skipping."
+fi
+
+echo "[2/3] Downloading Qwen3-Coder-Next-int4-AutoRound..."
+
+if [ ! -d "$MODEL_DIR/qwen3-coder-next-int4" ]; then
+    hf download Intel/Qwen3-Coder-Next-int4-AutoRound \
+        --local-dir "$MODEL_DIR/qwen3-coder-next-int4"
+else
+    echo "Already exists, skipping."
+fi
+
+echo "[3/3] Downloading Qwen3-VL-4B-Instruct..."
+
+if [ ! -d "$MODEL_DIR/qwen3-vl-4b" ]; then
+    hf download Qwen/Qwen3-VL-4B-Instruct \
+        --local-dir "$MODEL_DIR/qwen3-vl-4b"
+else
+    echo "Already exists, skipping."
+fi
+
+echo ""
+echo "=== All models downloaded ==="
+echo "Total size: $(du -sh "$MODEL_DIR" | cut -f1)"
+
+df -h "$HOME"
+```
+
+---
+
+## Run the Script
+
+```bash
+chmod +x download-models.sh
+./download-models.sh
+```
+
+---
+
+# API Key Setup (One-Time)
+
+```bash
+mkdir -p ~/.keys
+
+openssl rand -hex 32 > ~/.keys/vllm_main_key
+openssl rand -hex 32 > ~/.keys/vllm_coder_key
+openssl rand -hex 32 > ~/.keys/vllm_vision_key
+
+chmod 600 ~/.keys/*
+```
+
+Create symlinks used by systemd:
+
+```bash
+ln -sf ~/.keys/vllm_main_key ~/.vllm_main_key
+ln -sf ~/.keys/vllm_coder_key ~/.vllm_coder_key
+ln -sf ~/.keys/vllm_vision_key ~/.vllm_vision_key
+```
+
+---
+
 # Systemd Services
 
 ---

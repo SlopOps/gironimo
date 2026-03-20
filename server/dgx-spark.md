@@ -156,9 +156,10 @@ chmod 600 ~/.keys/*
 Create symlinks used by systemd:
 
 ```bash
-ln -sf ~/.keys/vllm_main_key ~/.vllm_main_key
-ln -sf ~/.keys/vllm_coder_key ~/.vllm_coder_key
-ln -sf ~/.keys/vllm_vision_key ~/.vllm_vision_key
+# Create symlinks for root (since service is running as root)
+sudo ln -sf /root/.keys/vllm_main_key /root/.vllm_main_key
+sudo ln -sf /root/.keys/vllm_coder_key /root/.vllm_coder_key
+sudo ln -sf /root/.keys/vllm_vision_key /root/.vllm_vision_key
 ```
 
 ---

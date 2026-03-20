@@ -265,7 +265,7 @@ Requires=docker.service
 
 [Service]
 Type=simple
-User=%u
+User=root
 Restart=always
 RestartSec=10
 TimeoutStartSec=600
@@ -278,8 +278,8 @@ ExecStart=/usr/bin/docker run \
   --gpus all \
   --network vllm-net \
   -p 8001:8001 \
-  -v %h/models:/root/.cache/huggingface \
-  -v %h/models:/models \
+  -v /root/models:/root/.cache/huggingface \
+  -v /root/models:/models \
   --ipc=host \
   --shm-size=16g \
   --ulimit memlock=-1 \
@@ -288,7 +288,7 @@ ExecStart=/usr/bin/docker run \
   -e PYTHONUNBUFFERED=1 \
   -e VLLM_LOGGING_LEVEL=warning \
   -e HF_HOME=/root/.cache/huggingface \
-  -e VLLM_API_KEY=$$(cat %h/.vllm_coder_key) \
+  -e VLLM_API_KEY=$(cat /root/.vllm_coder_key) \
   -e VLLM_MARLIN_USE_ATOMIC_ADD=1 \
   -e VLLM_ATTENTION_BACKEND=FLASHINFER \
   -e VLLM_CUDA_GRAPH_MODE=full_and_piecewise \
@@ -306,7 +306,6 @@ ExecStart=/usr/bin/docker run \
   --host 0.0.0.0 \
   --quantization int4 \
   --dtype bfloat16 \
-  --load-format fastsafetensors \
   --gpu-memory-utilization 0.33 \
   --swap-space 16 \
   --max-model-len 262144 \
@@ -318,7 +317,7 @@ ExecStart=/usr/bin/docker run \
   --tool-call-parser qwen3_coder \
   --trust-remote-code
 
-ExecStartPost=/bin/bash -c 'for i in {1..60}; do curl -sf -H "Authorization: Bearer $(cat %h/.vllm_coder_key)" http://localhost:8001/health && exit 0; sleep 2; done; exit 1'
+ExecStartPost=/bin/bash -c 'for i in {1..60}; do curl -sf -H "Authorization: Bearer $(cat /root/.vllm_coder_key)" http://localhost:8001/health && exit 0; sleep 2; done; exit 1'
 ExecStop=/usr/bin/docker stop vllm-coder || true
 
 [Install]
@@ -337,7 +336,7 @@ Requires=docker.service
 
 [Service]
 Type=simple
-User=%u
+User=root
 Restart=always
 RestartSec=10
 TimeoutStartSec=600
@@ -350,8 +349,8 @@ ExecStart=/usr/bin/docker run \
   --gpus all \
   --network vllm-net \
   -p 8002:8002 \
-  -v %h/models:/root/.cache/huggingface \
-  -v %h/models:/models \
+  -v /root/models:/root/.cache/huggingface \
+  -v /root/models:/models \
   --ipc=host \
   --shm-size=8g \
   --ulimit memlock=-1 \
@@ -360,7 +359,7 @@ ExecStart=/usr/bin/docker run \
   -e PYTHONUNBUFFERED=1 \
   -e VLLM_LOGGING_LEVEL=warning \
   -e HF_HOME=/root/.cache/huggingface \
-  -e VLLM_API_KEY=$$(cat %h/.vllm_vision_key) \
+  -e VLLM_API_KEY=$(cat /root/.vllm_vision_key) \
   -e VLLM_ATTENTION_BACKEND=FLASHINFER \
   -e VLLM_CUDA_GRAPH_MODE=full_and_piecewise \
   -e VLLM_WORKER_MULTIPROC_METHOD=spawn \
@@ -375,7 +374,6 @@ ExecStart=/usr/bin/docker run \
   --port 8002 \
   --host 0.0.0.0 \
   --dtype bfloat16 \
-  --load-format fastsafetensors \
   --attention-backend flashinfer \
   --gpu-memory-utilization 0.05 \
   --max-model-len 32768 \
@@ -385,7 +383,7 @@ ExecStart=/usr/bin/docker run \
   --enforce-eager \
   --trust-remote-code
 
-ExecStartPost=/bin/bash -c 'for i in {1..60}; do curl -sf -H "Authorization: Bearer $(cat %h/.vllm_vision_key)" http://localhost:8002/health && exit 0; sleep 2; done; exit 1'
+ExecStartPost=/bin/bash -c 'for i in {1..60}; do curl -sf -H "Authorization: Bearer $(cat /root/.vllm_vision_key)" http://localhost:8002/health && exit 0; sleep 2; done; exit 1'
 ExecStop=/usr/bin/docker stop vllm-vision || true
 
 [Install]

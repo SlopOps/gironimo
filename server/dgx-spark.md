@@ -2,38 +2,30 @@
 
 ## Architecture Overview
 
-| Component         | Location  | Responsibility                                   |
-| ----------------- | --------- | ------------------------------------------------ |
+| Component | Location | Responsibility |
+|-----------|----------|----------------|
 | vLLM Servers (3x) | DGX Spark | Model inference, GPU compute (Docker containers) |
-| Agent Scripts     | Laptop    | Orchestration, file I/O, human gates             |
-| CodeGraph Index   | Laptop    | Code embeddings, semantic search                 |
-| Project Files     | Laptop    | Source code, specs, ADRs                         |
+| Agent Scripts | Laptop | Orchestration, file I/O, human gates |
+| CodeGraph Index | Laptop | Code embeddings, semantic search |
+| Project Files | Laptop | Source code, specs, ADRs |
 
 ---
 
-# Docker Installation (Required)
+# Docker Setup
 
-## Install Docker Engine
+## Verify Docker is Installed
 
 ```bash
-sudo apt update
-sudo apt install -y ca-certificates curl
-
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
-
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-sudo apt update
-sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+docker --version
 ```
 
----
-
-## Install NVIDIA Container Toolkit
+## Install NVIDIA Container Toolkit (if not present)
 
 ```bash
+# Check if NVIDIA Container Toolkit is installed
+dpkg -l | grep nvidia-container-toolkit
+
+# If not installed, run:
 curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
 
 curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
@@ -42,19 +34,28 @@ sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
 
 sudo apt update
 sudo apt install -y nvidia-container-toolkit
-
-sudo nvidia-ctk runtime configure --runtime=nvidia
-sudo systemctl restart docker
-
-docker run --rm --runtime=nvidia --gpus all nvidia/cuda:12.8.0-base-ubuntu22.04 nvidia-smi
 ```
 
----
+## Verify GPU Access
 
-## Enable Docker on Boot (Required)
+```bash
+# Test that Docker can access the GPU
+sudo docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu22.04 nvidia-smi
+```
+
+You should see your GPU (NVIDIA GB10) and CUDA version.
+
+## Enable Docker on Boot
 
 ```bash
 sudo systemctl enable docker
+```
+
+## Add User to Docker Group (Optional QoL)
+
+```bash
+sudo usermod -aG docker $USER
+newgrp docker  # or log out and back in
 ```
 
 ---
@@ -83,8 +84,6 @@ This installs to:
 $HOME/.local/bin/hf
 ```
 
----
-
 ## Add to PATH
 
 ### Bash
@@ -101,15 +100,11 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
----
-
 ## Verify
 
 ```bash
 hf --version
 ```
-
----
 
 ## Login
 
@@ -125,8 +120,6 @@ hf auth login
 ~/models/
 ```
 
----
-
 ## Storage Layout
 
 ```
@@ -139,6 +132,8 @@ hf auth login
 ---
 
 # One-Time Download Script
+
+Save as **download-models.sh**
 
 ```bash
 #!/bin/bash
@@ -161,6 +156,13 @@ hf download Qwen/Qwen3-VL-4B-Instruct --local-dir "$MODEL_DIR/qwen3-vl-4b"
 du -sh "$MODEL_DIR"
 ```
 
+Run the script:
+
+```bash
+chmod +x download-models.sh
+./download-models.sh
+```
+
 ---
 
 # API Keys
@@ -175,9 +177,17 @@ openssl rand -hex 32 > ~/.keys/vllm_vision_key
 chmod 600 ~/.keys/*
 ```
 
+Create symlinks used by systemd:
+
+```bash
+ln -sf ~/.keys/vllm_main_key ~/.vllm_main_key
+ln -sf ~/.keys/vllm_coder_key ~/.vllm_coder_key
+ln -sf ~/.keys/vllm_vision_key ~/.vllm_vision_key
+```
+
 ---
 
-# Pull vLLM Image (Required)
+# Pull vLLM Image
 
 ```bash
 docker pull vllm/vllm-openai:v0.17.1-cu130
@@ -193,9 +203,9 @@ docker pull vllm/vllm-openai:v0.17.1-cu130
 
 ```ini
 [Unit]
-Description=vLLM Main Agent - Docker
-After=network.target docker.target
-Requires=docker.target
+Description=vLLM Main Agent (Qwen3.5-35B-A3B-FP8) - Docker
+After=network.target docker.service
+Requires=docker.service
 
 [Service]
 Type=simple
@@ -203,11 +213,12 @@ User=%u
 Restart=always
 RestartSec=10
 TimeoutStartSec=600
+TimeoutStopSec=120
 
 ExecStart=/usr/bin/docker run \
+  --rm \
   --pull=never \
   --name vllm-main \
-  --runtime=nvidia \
   --gpus all \
   --network vllm-net \
   -p 8000:8000 \
@@ -267,9 +278,9 @@ WantedBy=multi-user.target
 
 ```ini
 [Unit]
-Description=vLLM Coder Agent - Docker
-After=network.target docker.target vllm-main.service
-Requires=docker.target
+Description=vLLM Coder Agent (Qwen3-Coder-Next-int4-AutoRound) - Docker
+After=network.target docker.service vllm-main.service
+Requires=docker.service
 
 [Service]
 Type=simple
@@ -277,11 +288,12 @@ User=%u
 Restart=always
 RestartSec=10
 TimeoutStartSec=600
+TimeoutStopSec=120
 
 ExecStart=/usr/bin/docker run \
+  --rm \
   --pull=never \
   --name vllm-coder \
-  --runtime=nvidia \
   --gpus all \
   --network vllm-net \
   -p 8001:8001 \
@@ -338,9 +350,9 @@ WantedBy=multi-user.target
 
 ```ini
 [Unit]
-Description=vLLM Vision Model - Docker
-After=network.target docker.target vllm-main.service vllm-coder.service
-Requires=docker.target
+Description=vLLM Vision Model (Qwen3-VL-4B-Instruct) - Docker
+After=network.target docker.service vllm-main.service vllm-coder.service
+Requires=docker.service
 
 [Service]
 Type=simple
@@ -348,11 +360,12 @@ User=%u
 Restart=always
 RestartSec=10
 TimeoutStartSec=600
+TimeoutStopSec=120
 
 ExecStart=/usr/bin/docker run \
+  --rm \
   --pull=never \
   --name vllm-vision \
-  --runtime=nvidia \
   --gpus all \
   --network vllm-net \
   -p 8002:8002 \
@@ -406,4 +419,56 @@ WantedBy=multi-user.target
 sudo systemctl daemon-reload
 sudo systemctl enable vllm-main vllm-coder vllm-vision
 sudo systemctl start vllm-main vllm-coder vllm-vision
+```
+
+---
+
+## Check Status
+
+```bash
+sudo systemctl status vllm-main vllm-coder vllm-vision
+```
+
+---
+
+## View Logs
+
+```bash
+# Systemd logs
+sudo journalctl -u vllm-main -f
+sudo journalctl -u vllm-coder -f
+sudo journalctl -u vllm-vision -f
+
+# Docker container logs
+docker logs vllm-main -f
+docker logs vllm-coder -f
+docker logs vllm-vision -f
+```
+
+---
+
+## Test API
+
+```bash
+# Test main model
+curl -H "Authorization: Bearer $(cat ~/.vllm_main_key)" \
+http://localhost:8000/v1/models
+
+# Test coder model
+curl -H "Authorization: Bearer $(cat ~/.vllm_coder_key)" \
+http://localhost:8001/v1/models
+
+# Test vision model
+curl -H "Authorization: Bearer $(cat ~/.vllm_vision_key)" \
+http://localhost:8002/v1/models
+```
+
+---
+
+## Firewall (if needed)
+
+```bash
+sudo ufw allow 8000/tcp
+sudo ufw allow 8001/tcp
+sudo ufw allow 8002/tcp
 ```

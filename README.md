@@ -9,7 +9,7 @@ A distributed AI development system named after a very brave stuffed giraffe. Ru
 │     Laptop      │  ═══════════════════════► │   DGX Spark     │
 │                 │                           │                 │
 │  🦒 Gironimo    │  ──► vLLM (35B)  :8000    │  GPU Compute    │
-│  Orchestrator   │  ──► vLLM (Coder):8001    │  128GB VRAM     │
+│  Orchestrator   │  ──► vLLM (GLM)  :8001    │  128GB VRAM     │
 │  Scout Agent    │  ──► vLLM (Vision):8002   │                 │
 │  CodeGraph      │                           │  Systemd        │
 │  ADR Manager    │                           │  Auto-restart   │
@@ -70,36 +70,35 @@ Request → Spec (human gate 🚪) → Scout (context 🔍) → Architecture (hu
 
 ### DGX Spark (GPU Server) — The Savannah
 
-1. Install vLLM and dependencies:
+1. Clone and build optimized Docker images:
 ```bash
-mkdir ~/gironimo && cd ~/gironimo
-uv venv --python 3.11
-source .venv/bin/activate
-uv pip install vllm
+git clone https://github.com/eugr/spark-vllm-docker.git
+cd spark-vllm-docker
+
+# Build main optimized image (for Main and Vision)
+./build-and-copy.sh -t vllm-optimized --pre-tf
+
+# Build GLM-optimized image (for Coder)
+./build-and-copy.sh -t vllm-optimized-glm --pre-tf --apply-mod mods/fix-glm-4.7-flash-AWQ
 ```
 
-2. Configure API keys and model symlinks:
+2. Download models:
 ```bash
-# Create API keys
-mkdir -p ~/.keys
-openssl rand -hex 32 > ~/.keys/vllm_main_key
-openssl rand -hex 32 > ~/.keys/vllm_coder_key
-openssl rand -hex 32 > ~/.keys/vllm_vision_key
-chmod 600 ~/.keys/*
+# Create models directory
+mkdir -p ~/models
+
+# Download models using Hugging Face CLI
+hf download Qwen/Qwen3.5-35B-A3B-FP8 --local-dir ~/models/qwen3.5-35b-a3b-fp8
+hf download cyankiwi/GLM-4.7-Flash-AWQ-4bit --local-dir ~/models/glm-4.7-flash-awq-4bit
+hf download Qwen/Qwen3-VL-4B-Instruct --local-dir ~/models/qwen3-vl-4b-instruct
 
 # Create symlinks for root (services run as root)
-sudo ln -sf ~/.keys/vllm_main_key /root/.vllm_main_key
-sudo ln -sf ~/.keys/vllm_coder_key /root/.vllm_coder_key
-sudo ln -sf ~/.keys/vllm_vision_key /root/.vllm_vision_key
-sudo ln -sf ~/models /root/models
+sudo ln -sf ~/models/qwen3.5-35b-a3b-fp8 /root/models/qwen3.5-35b-a3b-fp8
+sudo ln -sf ~/models/glm-4.7-flash-awq-4bit /root/models/glm-4.7-flash-awq-4bit
+sudo ln -sf ~/models/qwen3-vl-4b-instruct /root/models/qwen3-vl-4b-instruct
 ```
 
-3. Pull the vLLM Docker image:
-```bash
-docker pull vllm/vllm-openai:v0.17.1-cu130
-```
-
-4. Install systemd services for auto-restart:
+3. Install systemd services for auto-restart:
 ```bash
 # Copy the optimized service files (included in the repository)
 sudo cp systemd/vllm-*.service /etc/systemd/system/
@@ -114,11 +113,12 @@ Services restart automatically on crash or reboot. The herd stays together.
 
 The DGX Spark runs three vLLM services with carefully tuned memory distribution for the 128GB GB10 GPU:
 
-| Service | GPU Memory | Swap Space | Context | Prefix Caching |
-|---------|------------|------------|---------|----------------|
-| vllm-main | 45% (57.6GB) | 20GB | 262K | ✅ Enabled |
-| vllm-coder | 25% (32GB) | 20GB | 131K | ❌ Disabled |
-| vllm-vision | 3% (3.8GB) | - | 32K | ❌ Disabled |
+| Service | Model | GPU Memory | KV Cache | Context | Performance |
+|---------|-------|------------|----------|---------|-------------|
+| vllm-main | Qwen3.5-35B-FP8 | 53.8 GB (42%) | 15 GB | 262K | **49.5 t/s** |
+| vllm-coder | GLM-4.7-Flash-AWQ | 36.6 GB (29%) | Auto | 202K | **45.5 t/s** |
+| vllm-vision | Qwen3-VL-4B | 12.8 GB (10%) | 2.5 GB | 24K | **21.9 t/s** |
+| **Total** | - | **~103 GB (81%)** | - | - | - |
 
 **Management commands:**
 ```bash
@@ -356,28 +356,28 @@ nvidia-smi
 sudo systemctl status vllm-main vllm-coder vllm-vision
 
 # The optimized configuration uses:
-# - Main: 45% (57.6GB) with 262K context
-# - Coder: 25% (32GB) with 131K context (prefix caching disabled)
-# - Vision: 3% (3.8GB) with 32K context
+# - Main: 53.8 GB with 262K context (49.5 t/s)
+# - Coder: 36.6 GB with 202K context (45.5 t/s)
+# - Vision: 12.8 GB with 24K context (21.9 t/s)
 
 # If needed, adjust memory in /etc/systemd/system/vllm-*.service
 sudo nano /etc/systemd/system/vllm-coder.service
-# Change --gpu-memory-utilization 0.25 to a lower value
+# Change --gpu-memory-utilization 0.30 to a lower value
 sudo systemctl daemon-reload
 sudo systemctl restart vllm-coder
 ```
 
 ## Models 🧠
 
-| Role | Model | Quantization | GPU Memory | Context | Purpose |
-|------|-------|--------------|------------|---------|---------|
-| 🦒 Main | Qwen3.5-35B-A3B-Instruct | FP8 | 45% (57.6GB) | 262K tokens | Spec, architecture, implementation reasoning |
-| ⚡ Coder | Qwen3-Coder-Next-int4-AutoRound | int4 | 25% (32GB) | 131K tokens | Code critique, revision, verification |
-| 👁️ Vision | Qwen3-VL-4B-Instruct | bfloat16 | 3% (3.8GB) | 32K tokens | UI validation via screenshots |
+| Role | Model | Quantization | GPU Memory | Context | Performance | Purpose |
+|------|-------|--------------|------------|---------|-------------|---------|
+| 🦒 Main | Qwen3.5-35B-A3B-FP8 | FP8 | 53.8 GB | 262K tokens | **49.5 t/s** | Spec, architecture, implementation reasoning |
+| ⚡ Coder | GLM-4.7-Flash-AWQ-4bit | AWQ int4 | 36.6 GB | 202K tokens | **45.5 t/s** | Code critique, revision, verification |
+| 👁️ Vision | Qwen3-VL-4B-Instruct | bfloat16 | 12.8 GB | 24K tokens | **21.9 t/s** | UI validation via screenshots |
 
-**Total:** 73% (93.4GB) GPU memory, leaving 27% (34.6GB) for KV cache and overhead.
+**Total:** 103 GB (80%) GPU memory, leaving 25 GB headroom for system processes and KV cache overhead. All three models run simultaneously on a single DGX Spark with 128GB unified memory.
 
-Selected for quality/speed tradeoff on DGX Spark with optimized memory distribution to run all three models simultaneously on the 128GB GB10 GPU. Tall models for tall tasks.
+Selected for quality/speed tradeoff on DGX Spark with optimized memory distribution. Tall models for tall tasks.
 
 ## Phase Limits ⏱️
 

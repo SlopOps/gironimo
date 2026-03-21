@@ -126,7 +126,7 @@ if ! hf whoami > /dev/null 2>&1; then
 fi
 
 hf download Qwen/Qwen3.5-35B-A3B-FP8 --local-dir "$MODEL_DIR/qwen3.5-35b-a3b-fp8"
-hf download Intel/Qwen3-Coder-Next-int4-AutoRound --local-dir "$MODEL_DIR/qwen3-coder-next-int4-autoround"
+hf download Qwen/Qwen3-Coder-Next-FP8 --local-dir "$MODEL_DIR/qwen3-coder-next-fp8"
 hf download Qwen/Qwen3-VL-4B-Instruct --local-dir "$MODEL_DIR/qwen3-vl-4b-instruct"
 
 du -sh "$MODEL_DIR"
@@ -139,7 +139,7 @@ chmod +x download-models.sh
 ./download-models.sh
 
 ln -sf ~/models/qwen3.5-35b-a3b-fp8 /root/models/qwen3.5-35b-a3b-fp8
-ln -sf ~/models/qwen3-coder-next-int4-autoround /root/models/qwen3-coder-next-int4-autoround
+ln -sf ~/models/qwen3-coder-next-fp8 /root/models/qwen3-coder-next-fp8
 ln -sf ~/models/qwen3-vl-4b-instruct /root/models/qwen3-vl-4b-instruct
 ```
 

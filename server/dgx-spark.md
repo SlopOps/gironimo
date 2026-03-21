@@ -436,12 +436,12 @@ sudo ufw allow 8002/tcp
 
 # Model Summary
 
-| Agent     | Model                 | Path                             | Size       | GPU Mem  | Swap     | Est VRAM   |
-| --------- | --------------------- | -------------------------------- | ---------- | -------- | -------- | ---------- |
-| Main      | Qwen3.5-35B-A3B-FP8   | `~/models/qwen3.5-35b-a3b-fp8`   | ~70GB      | 0.55     | 16GB     | ~70GB      |
-| Coder     | Qwen3-Coder-Next-int4 | `~/models/qwen3-coder-next-int4` | ~45GB      | 0.33     | 16GB     | ~42GB      |
-| Vision    | Qwen3-VL-4B           | `~/models/qwen3-vl-4b`           | ~8GB       | 0.05     | -        | ~6GB       |
-| **Total** |                       |                                  | **~123GB** | **0.93** | **32GB** | **~118GB** |
+| Agent     | Model                 | Path                             | Size       | GPU Util | Swap     | Context   | Est VRAM   |
+| --------- | --------------------- | -------------------------------- | ---------- | -------- | -------- | --------- | ---------- |
+| Main      | Qwen3.5-35B-A3B-FP8   | `~/models/qwen3.5-35b-a3b-fp8`   | ~35GB      | 0.38     | 24GB     | 262K      | ~48GB      |
+| Coder     | Qwen3-Coder-Next-int4 | `~/models/qwen3-coder-next-int4` | ~16GB      | 0.28     | 32GB     | 32K       | ~35GB      |
+| Vision    | Qwen3-VL-4B           | `~/models/qwen3-vl-4b`           | ~8GB       | 0.04     | -        | 32K       | ~5GB       |
+| **Total** |                       |                                  | **~59GB**  | **0.70** | **56GB** |           | **~88GB**  |
 
 ---
 

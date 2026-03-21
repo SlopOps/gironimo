@@ -447,11 +447,16 @@ sudo ufw allow 8002/tcp
 
 # Environment Variables Summary
 
-| Variable                       | Value | Purpose                    |
-| ------------------------------ | ----- | -------------------------- |
-| `OMP_NUM_THREADS`              | 8     | OpenMP parallelism         |
-| `MKL_NUM_THREADS`              | 8     | BLAS thread control        |
-| `NUMEXPR_NUM_THREADS`          | 8     | NumExpr thread limit       |
-| `TOKENIZERS_PARALLELISM`       | false | Prevent tokenizer deadlock |
-| `CUDA_DEVICE_MAX_CONNECTIONS`  | 1     | Reduce scheduler thrash    |
-| `VLLM_WORKER_MULTIPROC_METHOD` | spawn | Safe multiprocessing       |
+All services use these environment variables for performance and stability:
+
+| Variable | Value | Purpose |
+|----------|-------|---------|
+| `OMP_NUM_THREADS` | 8 (Main/Coder), 4 (Vision) | Thread control |
+| `TOKENIZERS_PARALLELISM` | false | Prevent deadlocks |
+| `CUDA_DEVICE_MAX_CONNECTIONS` | 1 | Reduce scheduler thrash |
+| `VLLM_WORKER_MULTIPROC_METHOD` | spawn | Safe multiprocessing |
+
+Additional optimizations are set via command-line flags:
+- `--kv-cache-dtype fp8` (50% KV cache memory savings)
+- `--attention-backend flashinfer` (optimized attention)
+- `--max-num-seqs 2` (single-user concurrency)

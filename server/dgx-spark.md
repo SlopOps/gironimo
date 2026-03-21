@@ -1,13 +1,53 @@
-# Distributed Setup: DGX Spark (vLLM)
+# Distributed Setup: DGX Spark (vLLM with Docker)
 
 ## Architecture Overview
 
-| Component         | Location  | Responsibility                       |
-| ----------------- | --------- | ------------------------------------ |
-| vLLM Servers (3x) | DGX Spark | Model inference, GPU compute         |
-| Agent Scripts     | Laptop    | Orchestration, file I/O, human gates |
-| CodeGraph Index   | Laptop    | Code embeddings, semantic search     |
-| Project Files     | Laptop    | Source code, specs, ADRs             |
+| Component | Location | Responsibility |
+|-----------|----------|----------------|
+| vLLM Servers (3x) | DGX Spark | Model inference, GPU compute (Docker containers) |
+| Agent Scripts | Laptop | Orchestration, file I/O, human gates |
+| CodeGraph Index | Laptop | Code embeddings, semantic search |
+| Project Files | Laptop | Source code, specs, ADRs |
+
+---
+
+# Docker Setup
+
+## Verify Docker is Installed
+
+```bash
+docker --version
+```
+
+## Verify GPU Access
+
+```bash
+# Test that Docker can access the GPU
+sudo docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu22.04 nvidia-smi
+```
+
+You should see your GPU (NVIDIA GB10) and CUDA version.
+
+## Enable Docker on Boot
+
+```bash
+sudo systemctl enable docker
+```
+
+## Add User to Docker Group (Optional QoL)
+
+```bash
+sudo usermod -aG docker $USER
+newgrp docker  # or log out and back in
+```
+
+---
+
+# Docker Network
+
+```bash
+docker network create vllm-net || true
+```
 
 ---
 
@@ -15,25 +55,19 @@
 
 The model download script requires the **Hugging Face CLI**.
 
-Install it once per user.
-
 ## Install
 
 ```bash
 curl -LsSf https://hf.co/cli/install.sh | bash
 ```
 
-This installs the CLI to:
+This installs to:
 
 ```
 $HOME/.local/bin/hf
 ```
 
----
-
-## Add to PATH (Current User)
-
-Ensure `$HOME/.local/bin` is in your PATH.
+## Add to PATH
 
 ### Bash
 
@@ -42,56 +76,68 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-### Zsh
-
-```bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-```
-
----
-
-## Verify Installation
+## Verify
 
 ```bash
 hf --version
 ```
 
----
-
-## Login to Hugging Face
-
-Some models require authentication.
+## Login
 
 ```bash
 hf auth login
 ```
 
-Create a token here if needed:
+---
 
-[https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+# Build Optimized Docker Images
+
+Clone the spark-vllm-docker repository which contains optimized builds for DGX Spark:
+
+```bash
+git clone https://github.com/eugr/spark-vllm-docker.git
+cd spark-vllm-docker
+```
+
+## Build Main Optimized Image (for Main and Vision Models)
+
+```bash
+# Build with Transformers 5 support
+./build-and-copy.sh -t vllm-optimized
+```
+
+## Build GLM-Optimized Image (for Coder Model)
+
+```bash
+# Build with Transformers 5 and GLM patch baked in
+./build-and-copy.sh -t vllm-optimized-glm --pre-tf
+```
+
+## Verify Images
+
+```bash
+docker images | grep vllm-optimized
+```
+
+You should see:
+- `vllm-optimized` - for main and vision models
+- `vllm-optimized-glm` - for GLM coder model
 
 ---
 
-# Persistent Model Storage (Download Once)
-
-Models are stored locally at:
+# Persistent Model Storage
 
 ```
 ~/models/
 ```
-
-This avoids re-downloading on every restart.
-
----
 
 ## Storage Layout
 
 ```
 ~/models/
 ├── qwen3.5-35b-a3b-fp8/
-├── qwen3-coder-next-int4/
-└── qwen3-vl-4b/
+├── glm-4.7-flash-awq-4bit/
+└── qwen3-vl-4b-instruct/
 ```
 
 ---
@@ -109,279 +155,139 @@ mkdir -p "$MODEL_DIR"
 
 export HF_HUB_DOWNLOAD_TIMEOUT=120
 
-echo "=== Downloading models to $MODEL_DIR ==="
-echo "Total: ~123GB. This will take a while on slow internet."
-echo ""
-
 if ! hf whoami > /dev/null 2>&1; then
-    echo "Please login first using: hf auth login"
+    echo "Run: hf auth login"
     exit 1
 fi
 
-echo "[1/3] Downloading Qwen3.5-35B-A3B-FP8..."
+# Download models
+hf download Qwen/Qwen3.5-35B-A3B-FP8 --local-dir "$MODEL_DIR/qwen3.5-35b-a3b-fp8"
+hf download cyankiwi/GLM-4.7-Flash-AWQ-4bit --local-dir "$MODEL_DIR/glm-4.7-flash-awq-4bit"
+hf download Qwen/Qwen3-VL-4B-Instruct --local-dir "$MODEL_DIR/qwen3-vl-4b-instruct"
 
-if [ ! -d "$MODEL_DIR/qwen3.5-35b-a3b-fp8" ]; then
-    hf download Qwen/Qwen3.5-35B-A3B-FP8 \
-        --local-dir "$MODEL_DIR/qwen3.5-35b-a3b-fp8"
-else
-    echo "Already exists, skipping."
-fi
-
-echo "[2/3] Downloading Qwen3-Coder-Next-int4-AutoRound..."
-
-if [ ! -d "$MODEL_DIR/qwen3-coder-next-int4" ]; then
-    hf download Intel/Qwen3-Coder-Next-int4-AutoRound \
-        --local-dir "$MODEL_DIR/qwen3-coder-next-int4"
-else
-    echo "Already exists, skipping."
-fi
-
-echo "[3/3] Downloading Qwen3-VL-4B-Instruct..."
-
-if [ ! -d "$MODEL_DIR/qwen3-vl-4b" ]; then
-    hf download Qwen/Qwen3-VL-4B-Instruct \
-        --local-dir "$MODEL_DIR/qwen3-vl-4b"
-else
-    echo "Already exists, skipping."
-fi
-
-echo ""
-echo "=== All models downloaded ==="
-echo "Total size: $(du -sh "$MODEL_DIR" | cut -f1)"
-
-df -h "$HOME"
+du -sh "$MODEL_DIR"
 ```
 
----
-
-## Run the Script
+Run the script:
 
 ```bash
 chmod +x download-models.sh
 ./download-models.sh
 ```
 
----
-
-# API Key Setup (One-Time)
+## Create Symlinks for Docker Access
 
 ```bash
-mkdir -p ~/.keys
-
-openssl rand -hex 32 > ~/.keys/vllm_main_key
-openssl rand -hex 32 > ~/.keys/vllm_coder_key
-openssl rand -hex 32 > ~/.keys/vllm_vision_key
-
-chmod 600 ~/.keys/*
-```
-
-Create symlinks used by systemd:
-
-```bash
-ln -sf ~/.keys/vllm_main_key ~/.vllm_main_key
-ln -sf ~/.keys/vllm_coder_key ~/.vllm_coder_key
-ln -sf ~/.keys/vllm_vision_key ~/.vllm_vision_key
+# Create symlinks from /root/models to actual model locations
+sudo ln -sf ~/models/qwen3.5-35b-a3b-fp8 /root/models/qwen3.5-35b-a3b-fp8
+sudo ln -sf ~/models/glm-4.7-flash-awq-4bit /root/models/glm-4.7-flash-awq-4bit
+sudo ln -sf ~/models/qwen3-vl-4b-instruct /root/models/qwen3-vl-4b-instruct
 ```
 
 ---
 
-# DGX Spark: Systemd Services
-
+# Systemd Services
 Create these files in:
-
 ```
 /etc/systemd/system/
 ```
 
 ---
 
-# vllm-main.service
-
-```
-/etc/systemd/system/vllm-main.service
-```
+## vllm-main.service
 
 ```ini
 [Unit]
-Description=vLLM Main Agent (Qwen3.5-35B-A3B-FP8)
-After=network.target
+Description=vLLM Main Agent (Qwen3.5-35B-A3B-FP8) - Docker
+After=network.target docker.service
+Requires=docker.service
 
 [Service]
-Type=simple
-User=%u
-WorkingDirectory=%h/Documents/gironimo/server
-
-LimitMEMLOCK=infinity
-LogRateLimitIntervalSec=0
-
-Environment="PATH=%h/Documents/gironimo/server/.venv/bin:/usr/local/bin:/usr/bin"
-Environment="CUDA_VISIBLE_DEVICES=0"
-Environment="PYTHONUNBUFFERED=1"
-Environment="VLLM_LOGGING_LEVEL=warning"
-Environment="HF_HOME=%h/models/.cache/huggingface"
-Environment="VLLM_API_KEY_FILE=%h/.vllm_main_key"
-Environment="VLLM_MARLIN_USE_ATOMIC_ADD=1"
-Environment="VLLM_ATTENTION_BACKEND=FLASHINFER"
-Environment="VLLM_CUDA_GRAPH_MODE=full_and_piecewise"
-Environment="VLLM_WORKER_MULTIPROC_METHOD=spawn"
-Environment="CUDA_DEVICE_MAX_CONNECTIONS=1"
-Environment="OMP_NUM_THREADS=8"
-Environment="MKL_NUM_THREADS=8"
-Environment="NUMEXPR_NUM_THREADS=8"
-Environment="TOKENIZERS_PARALLELISM=false"
-
-ExecStart=%h/Documents/gironimo/server/.venv/bin/python -m vllm.entrypoints.openai.api_server \
-  --model %h/models/qwen3.5-35b-a3b-fp8 \
-  --served-model-name Qwen/Qwen3.5-35B-A3B-FP8 \
-  --download-dir %h/models \
-  --port 8000 \
-  --host 0.0.0.0 \
-  --quantization fp8 \
-  --kv-cache-dtype fp8 \
-  --load-format fastsafetensors \
-  --attention-backend flashinfer \
-  --gpu-memory-utilization 0.55 \
-  --swap-space 16 \
-  --max-model-len 262144 \
-  --max-num-batched-tokens 32768 \
-  --max-num-seqs 4 \
-  --max-cudagraph-capture-size 10 \
-  --enable-prefix-caching \
-  --enable-auto-tool-choice \
-  --tool-call-parser qwen3_coder \
-  --reasoning-parser qwen \
-  --mamba-ssm-cache-dtype float16 \
-  --trust-remote-code
-
+Type=exec
+User=root
 Restart=always
-RestartSec=5
+RestartSec=10
+TimeoutStartSec=600
+TimeoutStopSec=120
 
-ExecStartPost=/bin/bash -c 'for i in {1..60}; do \
-curl -sf -H "Authorization: Bearer $(cat %h/.vllm_main_key)" \
-http://localhost:8000/health && exit 0; sleep 2; done; exit 1'
+ExecStartPre=-/usr/bin/docker rm -f vllm-main
+
+ExecStart=/usr/bin/docker run --rm --pull=never --name vllm-main --gpus all --network vllm-net -p 8000:8000 -v /root/models:/root/.cache/huggingface -v /root/models:/models --ipc=host --shm-size=32g --ulimit memlock=-1 --ulimit stack=67108864 -e CUDA_VISIBLE_DEVICES=0 -e PYTHONUNBUFFERED=1 -e VLLM_LOGGING_LEVEL=warning -e HF_HOME=/root/.cache/huggingface -e VLLM_MARLIN_USE_ATOMIC_ADD=1 -e VLLM_ATTENTION_BACKEND=FLASHINFER -e VLLM_WORKER_MULTIPROC_METHOD=spawn -e CUDA_DEVICE_MAX_CONNECTIONS=1 -e OMP_NUM_THREADS=8 -e MKL_NUM_THREADS=8 -e NUMEXPR_NUM_THREADS=8 -e TOKENIZERS_PARALLELISM=false vllm-optimized vllm serve /models/qwen3.5-35b-a3b-fp8 --download-dir /models --served-model-name Qwen/Qwen3.5-35B-A3B-FP8 --port 8000 --host 0.0.0.0 --quantization fp8 --kv-cache-dtype fp8 --attention-backend flashinfer --gpu-memory-utilization 0.50 --kv-cache-memory-bytes 15000000000 --max-model-len 262144 --max-num-batched-tokens 32768 --max-num-seqs 2 --max-cudagraph-capture-size 10 --enable-prefix-caching --enable-auto-tool-choice --tool-call-parser qwen3_coder --reasoning-parser qwen3 --mamba-ssm-cache-dtype float16 --trust-remote-code --load-format fastsafetensors
+
+ExecStartPost=/bin/bash -c 'for i in {1..300}; do curl -sf http://localhost:8000/health && sleep 5 && exit 0; sleep 2; done; exit 1'
+ExecStop=/usr/bin/docker stop vllm-main || true
 
 [Install]
 WantedBy=multi-user.target
 ```
 
+**Performance:** ~49.5 t/s | **Memory:** ~53.8 GB
+
 ---
 
-# vllm-coder.service
-
-```
-/etc/systemd/system/vllm-coder.service
-```
+## vllm-coder.service
 
 ```ini
 [Unit]
-Description=vLLM Coder Agent (Qwen3-Coder-Next-int4-AutoRound)
-After=network.target vllm-main.service
+Description=vLLM Coder Agent (Qwen3-Coder-Next-int4-AutoRound) - Docker
+After=network.target docker.service vllm-main.service
+Requires=docker.service vllm-main.service
 
 [Service]
-Type=simple
-User=%u
-WorkingDirectory=%h/Documents/gironimo/server
-
-LimitMEMLOCK=infinity
-LogRateLimitIntervalSec=0
-
-Environment="PATH=%h/Documents/gironimo/server/.venv/bin:/usr/local/bin:/usr/bin"
-Environment="CUDA_VISIBLE_DEVICES=0"
-Environment="PYTHONUNBUFFERED=1"
-Environment="VLLM_LOGGING_LEVEL=warning"
-Environment="HF_HOME=%h/models/.cache/huggingface"
-Environment="VLLM_API_KEY_FILE=%h/.vllm_coder_key"
-Environment="VLLM_MARLIN_USE_ATOMIC_ADD=1"
-Environment="VLLM_ATTENTION_BACKEND=FLASHINFER"
-Environment="VLLM_CUDA_GRAPH_MODE=full_and_piecewise"
-Environment="VLLM_WORKER_MULTIPROC_METHOD=spawn"
-Environment="CUDA_DEVICE_MAX_CONNECTIONS=1"
-Environment="OMP_NUM_THREADS=8"
-Environment="MKL_NUM_THREADS=8"
-Environment="NUMEXPR_NUM_THREADS=8"
-Environment="TOKENIZERS_PARALLELISM=false"
-
-ExecStart=%h/Documents/gironimo/server/.venv/bin/python -m vllm.entrypoints.openai.api_server \
-  --model %h/models/qwen3-coder-next-int4 \
-  --served-model-name Qwen/Qwen3-Coder-Next-int4-AutoRound \
-  --download-dir %h/models \
-  --port 8001 \
-  --host 0.0.0.0 \
-  --quantization int4 \
-  --dtype bfloat16 \
-  --load-format fastsafetensors \
-  --attention-backend flashinfer \
-  --gpu-memory-utilization 0.33 \
-  --swap-space 16 \
-  --max-model-len 262144 \
-  --max-num-batched-tokens 32768 \
-  --max-num-seqs 4 \
-  --enable-prefix-caching \
-  --enable-auto-tool-choice \
-  --tool-call-parser qwen3_coder
-
+Type=exec
+User=root
 Restart=always
-RestartSec=5
+RestartSec=10
+TimeoutStartSec=600
+TimeoutStopSec=120
+
+ExecStartPre=-/usr/bin/docker rm -f vllm-coder
+
+ExecStart=/usr/bin/docker run --rm --pull=never --name vllm-coder --gpus all --network vllm-net -p 8001:8001 -v /root/models:/root/.cache/huggingface -v /root/models:/models --ipc=host --shm-size=16g --ulimit memlock=-1 --ulimit stack=67108864 -e CUDA_VISIBLE_DEVICES=0 -e PYTHONUNBUFFERED=1 -e VLLM_LOGGING_LEVEL=warning -e HF_HOME=/root/.cache/huggingface -e VLLM_MARLIN_USE_ATOMIC_ADD=1 -e VLLM_WORKER_MULTIPROC_METHOD=spawn -e CUDA_DEVICE_MAX_CONNECTIONS=1 -e OMP_NUM_THREADS=8 -e MKL_NUM_THREADS=8 -e NUMEXPR_NUM_THREADS=8 -e TOKENIZERS_PARALLELISM=false vllm-optimized-glm vllm serve /models/glm-4.7-flash-awq-4bit --download-dir /models --tool-call-parser glm47 --reasoning-parser glm45 --enable-auto-tool-choice --served-model-name glm-4.7-flash --max-model-len 202752 --max-num-batched-tokens 4096 --max-num-seqs 64 --gpu-memory-utilization 0.30 --host 0.0.0.0 --port 8001 --trust-remote-code --load-format fastsafetensors
+
+ExecStartPost=/bin/bash -c 'for i in {1..300}; do curl -sf http://localhost:8001/health && sleep 5 && exit 0; sleep 2; done; exit 1'
+ExecStop=/usr/bin/docker stop vllm-coder || true
+
+[Install]
+WantedBy=multi-user.target
 ```
+
+**Performance:** ~45.5 t/s | **Memory:** ~36.6 GB
 
 ---
 
-# vllm-vision.service
-
-```
-/etc/systemd/system/vllm-vision.service
-```
+## vllm-vision.service
 
 ```ini
 [Unit]
-Description=vLLM Vision Model (Qwen3-VL-4B-Instruct)
-After=network.target vllm-main.service vllm-coder.service
+Description=vLLM Vision Model (Qwen3-VL-4B-Instruct) - Docker
+After=network.target docker.service vllm-main.service vllm-coder.service
+Requires=docker.service vllm-main.service vllm-coder.service
 
 [Service]
-Type=simple
-User=%u
-WorkingDirectory=%h/Documents/gironimo/server
-
-LimitMEMLOCK=infinity
-LogRateLimitIntervalSec=0
-
-Environment="PATH=%h/Documents/gironimo/server/.venv/bin:/usr/local/bin:/usr/bin"
-Environment="CUDA_VISIBLE_DEVICES=0"
-Environment="PYTHONUNBUFFERED=1"
-Environment="VLLM_LOGGING_LEVEL=warning"
-Environment="HF_HOME=%h/models/.cache/huggingface"
-Environment="VLLM_API_KEY_FILE=%h/.vllm_vision_key"
-Environment="VLLM_ATTENTION_BACKEND=FLASHINFER"
-Environment="VLLM_CUDA_GRAPH_MODE=full_and_piecewise"
-Environment="VLLM_WORKER_MULTIPROC_METHOD=spawn"
-Environment="CUDA_DEVICE_MAX_CONNECTIONS=1"
-Environment="OMP_NUM_THREADS=8"
-Environment="MKL_NUM_THREADS=8"
-Environment="NUMEXPR_NUM_THREADS=8"
-Environment="TOKENIZERS_PARALLELISM=false"
-
-ExecStart=%h/Documents/gironimo/server/.venv/bin/python -m vllm.entrypoints.openai.api_server \
-  --model %h/models/qwen3-vl-4b \
-  --served-model-name Qwen/Qwen3-VL-4B-Instruct \
-  --download-dir %h/models \
-  --port 8002 \
-  --host 0.0.0.0 \
-  --dtype bfloat16 \
-  --load-format fastsafetensors \
-  --attention-backend flashinfer \
-  --gpu-memory-utilization 0.05 \
-  --max-model-len 32768 \
-  --max-num-batched-tokens 4096 \
-  --max-num-seqs 2 \
-  --enforce-eager
-
+Type=exec
+User=root
 Restart=always
-RestartSec=5
+RestartSec=10
+TimeoutStartSec=600
+TimeoutStopSec=120
+
+ExecStartPre=-/usr/bin/docker rm -f vllm-vision
+
+ExecStart=/usr/bin/docker run --rm --pull=never --name vllm-vision --gpus all --network vllm-net -p 8002:8002 -v /root/models:/root/.cache/huggingface -v /root/models:/models --ipc=host --shm-size=8g --ulimit memlock=-1 --ulimit stack=67108864 -e CUDA_VISIBLE_DEVICES=0 -e PYTHONUNBUFFERED=1 -e VLLM_LOGGING_LEVEL=warning -e HF_HOME=/root/.cache/huggingface -e VLLM_WORKER_MULTIPROC_METHOD=spawn -e CUDA_DEVICE_MAX_CONNECTIONS=1 -e OMP_NUM_THREADS=4 -e NUMEXPR_NUM_THREADS=4 -e TOKENIZERS_PARALLELISM=false vllm-optimized vllm serve /models/qwen3-vl-4b-instruct --download-dir /models --served-model-name Qwen/Qwen3-VL-4B-Instruct --port 8002 --host 0.0.0.0 --dtype bfloat16 --kv-cache-dtype fp8 --attention-backend flashinfer --gpu-memory-utilization 0.10 --kv-cache-memory-bytes 2500000000 --max-model-len 24576 --max-num-batched-tokens 4096 --max-num-seqs 1 --enforce-eager --trust-remote-code --load-format fastsafetensors
+
+ExecStartPost=/bin/bash -c 'for i in {1..300}; do curl -sf http://localhost:8002/health && sleep 5 && exit 0; sleep 2; done; exit 1'
+ExecStop=/usr/bin/docker stop vllm-vision || true
+
+[Install]
+WantedBy=multi-user.target
 ```
+
+**Performance:** ~21.9 t/s | **Memory:** ~12.8 GB
 
 ---
 
-# Enable and Start Services
+# Enable + Start
 
 ```bash
 sudo systemctl daemon-reload
@@ -391,7 +297,7 @@ sudo systemctl start vllm-main vllm-coder vllm-vision
 
 ---
 
-## Check Status
+# Check Status
 
 ```bash
 sudo systemctl status vllm-main vllm-coder vllm-vision
@@ -399,18 +305,18 @@ sudo systemctl status vllm-main vllm-coder vllm-vision
 
 ---
 
-## View Logs
+# View Logs
 
 ```bash
+# Systemd logs
 sudo journalctl -u vllm-main -f
-```
+sudo journalctl -u vllm-coder -f
+sudo journalctl -u vllm-vision -f
 
----
-
-## Check GPU Memory
-
-```bash
-watch -n 1 nvidia-smi
+# Docker container logs
+docker logs vllm-main -f
+docker logs vllm-coder -f
+docker logs vllm-vision -f
 ```
 
 ---
@@ -418,45 +324,55 @@ watch -n 1 nvidia-smi
 # Test API
 
 ```bash
-curl -H "Authorization: Bearer $(cat ~/.vllm_main_key)" \
-http://localhost:8000/v1/models
+# Test main model
+curl http://localhost:8000/v1/models
+
+# Test coder model
+curl http://localhost:8001/v1/models
+
+# Test vision model
+curl http://localhost:8002/v1/models
 ```
 
 ---
 
-# Firewall
-
-```bash
-sudo ufw allow 8000/tcp
-sudo ufw allow 8001/tcp
-sudo ufw allow 8002/tcp
-```
-
----
-
-# Model Summary
-
-| Agent     | Model                 | Path                             | Size       | GPU Util | Swap     | Context   | Est VRAM   |
-| --------- | --------------------- | -------------------------------- | ---------- | -------- | -------- | --------- | ---------- |
-| Main      | Qwen3.5-35B-A3B-FP8   | `~/models/qwen3.5-35b-a3b-fp8`   | ~35GB      | 0.38     | 24GB     | 262K      | ~48GB      |
-| Coder     | Qwen3-Coder-Next-int4 | `~/models/qwen3-coder-next-int4` | ~16GB      | 0.28     | 32GB     | 32K       | ~35GB      |
-| Vision    | Qwen3-VL-4B           | `~/models/qwen3-vl-4b`           | ~8GB       | 0.04     | -        | 32K       | ~5GB       |
-| **Total** |                       |                                  | **~59GB**  | **0.70** | **56GB** |           | **~88GB**  |
+| Model | Tokens/sec | GPU Memory | Port |
+|-------|------------|------------|------|
+| Qwen3.5-35B-FP8 (Main) | **49.5 t/s** | 53.8 GB | 8000 |
+| GLM-4.7-Flash-AWQ (Coder) | **45.5 t/s** | 36.6 GB | 8001 |
+| Qwen3-VL-4B (Vision) | **21.9 t/s** | 12.8 GB | 8002 |
+| **Total** | - | **~103 GB** | - |
 
 ---
-
-# Environment Variables Summary
 
 All services use these environment variables for performance and stability:
 
-| Variable | Value | Purpose |
-|----------|-------|---------|
-| `OMP_NUM_THREADS` | 8 (Main/Coder), 4 (Vision) | Thread control |
-| `TOKENIZERS_PARALLELISM` | false | Prevent deadlocks |
-| `CUDA_DEVICE_MAX_CONNECTIONS` | 1 | Reduce scheduler thrash |
-| `VLLM_WORKER_MULTIPROC_METHOD` | spawn | Safe multiprocessing |
+| Variable | Main | Coder | Vision | Purpose |
+|----------|------|-------|--------|---------|
+| `OMP_NUM_THREADS` | 8 | 8 | 4 | Thread control |
+| `MKL_NUM_THREADS` | 8 | 8 | 4 | Intel MKL threading |
+| `NUMEXPR_NUM_THREADS` | 8 | 8 | 4 | NumExpr threading |
+| `TOKENIZERS_PARALLELISM` | false | false | false | Prevent tokenizer deadlocks |
+| `CUDA_DEVICE_MAX_CONNECTIONS` | 1 | 1 | 1 | Reduce scheduler thrash |
+| `VLLM_WORKER_MULTIPROC_METHOD` | spawn | spawn | spawn | Safe multiprocessing |
+| `VLLM_LOGGING_LEVEL` | warning | warning | warning | Reduce log noise |
+| `VLLM_MARLIN_USE_ATOMIC_ADD` | 1 | 1 | - | Marlin kernel optimization |
+| `VLLM_ATTENTION_BACKEND` | FLASHINFER | - | - | FlashInfer attention for Main |
+| `HF_HOME` | /root/.cache/huggingface | /root/.cache/huggingface | /root/.cache/huggingface | Hugging Face cache location |
 
-Additional optimizations are set via command-line flags:
-- `--kv-cache-dtype fp8` (50% KV cache memory savings)
-- `--attention-backend flashinfer` (optimized attention)
-- `--max-num-seqs 2` (single-user concurrency)
+**Additional optimizations via command-line flags:**
+
+| Flag | Main | Coder | Vision | Purpose |
+|------|------|-------|--------|---------|
+| `--kv-cache-dtype fp8` | ✅ | ✅ | ✅ | 50% KV cache memory savings |
+| `--attention-backend flashinfer` | ✅ | ✅ | ✅ | Optimized attention kernels |
+| `--load-format fastsafetensors` | ✅ | ✅ | ✅ | 3-5x faster model loading |
+| `--enable-prefix-caching` | ✅ | ✅ | ✅ | Reuse KV cache across requests |
+| `--enable-auto-tool-choice` | ✅ | ✅ | ❌ | Tool/function calling support |
+| `--max-num-seqs` | 2 | 64 | 1 | Concurrent request handling |
+| `--gpu-memory-utilization` | 0.50 | 0.30 | 0.10 | GPU memory allocation |
+| `--kv-cache-memory-bytes` | 15 GB | - | 2.5 GB | Explicit KV cache allocation |
+
+---
+
+All three models run simultaneously on a single DGX Spark with 128 GB unified memory, leaving ~25 GB headroom for system processes and overhead.

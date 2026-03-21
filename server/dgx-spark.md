@@ -166,7 +166,7 @@ After=network.target docker.service
 Requires=docker.service
 
 [Service]
-Type=simple
+Type=exec
 User=root
 Restart=always
 RestartSec=10
@@ -195,7 +195,7 @@ After=network.target docker.service vllm-main.service
 Requires=docker.service vllm-main.service
 
 [Service]
-Type=simple
+Type=exec
 User=root
 Restart=always
 RestartSec=10
@@ -224,7 +224,7 @@ After=network.target docker.service vllm-main.service vllm-coder.service
 Requires=docker.service vllm-main.service vllm-coder.service
 
 [Service]
-Type=simple
+Type=exec
 User=root
 Restart=always
 RestartSec=10

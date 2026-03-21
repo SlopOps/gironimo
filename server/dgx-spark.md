@@ -137,6 +137,10 @@ Run the script:
 ```bash
 chmod +x download-models.sh
 ./download-models.sh
+
+ln -sf ~/models/qwen3.5-35b-a3b-fp8 /root/models/qwen3.5-35b-a3b-fp8
+ln -sf ~/models/qwen3-coder-next-int4-autoround /root/models/qwen3-coder-next-int4-autoround
+ln -sf ~/models/qwen3-vl-4b-instruct /root/models/qwen3-vl-4b-instruct
 ```
 
 ---

@@ -126,8 +126,8 @@ if ! hf whoami > /dev/null 2>&1; then
 fi
 
 hf download Qwen/Qwen3.5-35B-A3B-FP8 --local-dir "$MODEL_DIR/qwen3.5-35b-a3b-fp8"
-hf download Intel/Qwen3-Coder-Next-int4-AutoRound --local-dir "$MODEL_DIR/qwen3-coder-next-int4"
-hf download Qwen/Qwen3-VL-4B-Instruct --local-dir "$MODEL_DIR/qwen3-vl-4b"
+hf download Intel/Qwen3-Coder-Next-int4-AutoRound --local-dir "$MODEL_DIR/qwen3-coder-next-int4-autoround"
+hf download Qwen/Qwen3-VL-4B-Instruct --local-dir "$MODEL_DIR/qwen3-vl-4b-instruct"
 
 du -sh "$MODEL_DIR"
 ```
@@ -204,7 +204,7 @@ TimeoutStopSec=120
 
 ExecStartPre=-/usr/bin/docker rm -f vllm-coder
 
-ExecStart=/usr/bin/docker run --rm --pull=never --name vllm-coder --gpus all --network vllm-net -p 8001:8001 -v /root/models:/root/.cache/huggingface -v /root/models:/models --ipc=host --shm-size=16g --ulimit memlock=-1 --ulimit stack=67108864 -e CUDA_VISIBLE_DEVICES=0 -e PYTHONUNBUFFERED=1 -e VLLM_LOGGING_LEVEL=warning -e HF_HOME=/root/.cache/huggingface -e VLLM_MARLIN_USE_ATOMIC_ADD=1 -e VLLM_WORKER_MULTIPROC_METHOD=spawn -e CUDA_DEVICE_MAX_CONNECTIONS=1 -e OMP_NUM_THREADS=8 -e MKL_NUM_THREADS=8 -e NUMEXPR_NUM_THREADS=8 -e TOKENIZERS_PARALLELISM=false -e VLLM_TARGET_DEVICE=cuda vllm/vllm-openai:v0.17.1-cu130 --model /models/qwen3-coder-next-int4 --download-dir /models --served-model-name Intel/Qwen3-Coder-Next-int4-AutoRound --port 8001 --host 0.0.0.0 --quantization int4 --dtype bfloat16 --gpu-memory-utilization 0.20 --kv-cache-memory-bytes 12000000000 --max-model-len 24576 --max-num-batched-tokens 12288 --max-num-seqs 2 --max-cudagraph-capture-size 4 --attention-backend flashinfer --enable-prefix-caching --enable-auto-tool-choice --tool-call-parser qwen3_coder --trust-remote-code
+ExecStart=/usr/bin/docker run --rm --pull=never --name vllm-coder --gpus all --network vllm-net -p 8001:8001 -v /root/models:/root/.cache/huggingface -v /root/models:/models --ipc=host --shm-size=16g --ulimit memlock=-1 --ulimit stack=67108864 -e CUDA_VISIBLE_DEVICES=0 -e PYTHONUNBUFFERED=1 -e VLLM_LOGGING_LEVEL=warning -e HF_HOME=/root/.cache/huggingface -e VLLM_MARLIN_USE_ATOMIC_ADD=1 -e VLLM_WORKER_MULTIPROC_METHOD=spawn -e CUDA_DEVICE_MAX_CONNECTIONS=1 -e OMP_NUM_THREADS=8 -e MKL_NUM_THREADS=8 -e NUMEXPR_NUM_THREADS=8 -e TOKENIZERS_PARALLELISM=false -e VLLM_TARGET_DEVICE=cuda vllm/vllm-openai:v0.17.1-cu130 --model /models/qwen3-coder-next-int4-autoround --download-dir /models --served-model-name Intel/Qwen3-Coder-Next-int4-AutoRound --port 8001 --host 0.0.0.0 --quantization int4 --dtype bfloat16 --gpu-memory-utilization 0.20 --kv-cache-memory-bytes 12000000000 --max-model-len 24576 --max-num-batched-tokens 12288 --max-num-seqs 2 --max-cudagraph-capture-size 4 --attention-backend flashinfer --enable-prefix-caching --enable-auto-tool-choice --tool-call-parser qwen3_coder --trust-remote-code
 
 ExecStartPost=/bin/bash -c 'for i in {1..300}; do curl -sf http://localhost:8001/health && sleep 5 && exit 0; sleep 2; done; exit 1'
 ExecStop=/usr/bin/docker stop vllm-coder || true
@@ -233,7 +233,7 @@ TimeoutStopSec=120
 
 ExecStartPre=-/usr/bin/docker rm -f vllm-vision
 
-ExecStart=/usr/bin/docker run --rm --pull=never --name vllm-vision --gpus all --network vllm-net -p 8002:8002 -v /root/models:/root/.cache/huggingface -v /root/models:/models --ipc=host --shm-size=8g --ulimit memlock=-1 --ulimit stack=67108864 -e CUDA_VISIBLE_DEVICES=0 -e PYTHONUNBUFFERED=1 -e VLLM_LOGGING_LEVEL=warning -e HF_HOME=/root/.cache/huggingface -e VLLM_WORKER_MULTIPROC_METHOD=spawn -e CUDA_DEVICE_MAX_CONNECTIONS=1 -e OMP_NUM_THREADS=4 -e NUMEXPR_NUM_THREADS=4 -e TOKENIZERS_PARALLELISM=false vllm/vllm-openai:v0.17.1-cu130 --model /models/qwen3-vl-4b --download-dir /models --served-model-name Qwen/Qwen3-VL-4B-Instruct --port 8002 --host 0.0.0.0 --dtype bfloat16 --kv-cache-dtype fp8 --attention-backend flashinfer --gpu-memory-utilization 0.10 --kv-cache-memory-bytes 3000000000 --max-model-len 32768 --max-num-batched-tokens 4096 --max-num-seqs 1 --enforce-eager --trust-remote-code
+ExecStart=/usr/bin/docker run --rm --pull=never --name vllm-vision --gpus all --network vllm-net -p 8002:8002 -v /root/models:/root/.cache/huggingface -v /root/models:/models --ipc=host --shm-size=8g --ulimit memlock=-1 --ulimit stack=67108864 -e CUDA_VISIBLE_DEVICES=0 -e PYTHONUNBUFFERED=1 -e VLLM_LOGGING_LEVEL=warning -e HF_HOME=/root/.cache/huggingface -e VLLM_WORKER_MULTIPROC_METHOD=spawn -e CUDA_DEVICE_MAX_CONNECTIONS=1 -e OMP_NUM_THREADS=4 -e NUMEXPR_NUM_THREADS=4 -e TOKENIZERS_PARALLELISM=false vllm/vllm-openai:v0.17.1-cu130 --model /models/qwen3-vl-4b-instruct --download-dir /models --served-model-name Qwen/Qwen3-VL-4B-Instruct --port 8002 --host 0.0.0.0 --dtype bfloat16 --kv-cache-dtype fp8 --attention-backend flashinfer --gpu-memory-utilization 0.10 --kv-cache-memory-bytes 3000000000 --max-model-len 32768 --max-num-batched-tokens 4096 --max-num-seqs 1 --enforce-eager --trust-remote-code
 
 ExecStartPost=/bin/bash -c 'for i in {1..300}; do curl -sf http://localhost:8002/health && sleep 5 && exit 0; sleep 2; done; exit 1'
 ExecStop=/usr/bin/docker stop vllm-vision || true

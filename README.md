@@ -78,7 +78,28 @@ source .venv/bin/activate
 uv pip install vllm
 ```
 
-2. Install systemd services for auto-restart:
+2. Configure API keys and model symlinks:
+```bash
+# Create API keys
+mkdir -p ~/.keys
+openssl rand -hex 32 > ~/.keys/vllm_main_key
+openssl rand -hex 32 > ~/.keys/vllm_coder_key
+openssl rand -hex 32 > ~/.keys/vllm_vision_key
+chmod 600 ~/.keys/*
+
+# Create symlinks for root (services run as root)
+sudo ln -sf ~/.keys/vllm_main_key /root/.vllm_main_key
+sudo ln -sf ~/.keys/vllm_coder_key /root/.vllm_coder_key
+sudo ln -sf ~/.keys/vllm_vision_key /root/.vllm_vision_key
+sudo ln -sf ~/models /root/models
+```
+
+3. Pull the vLLM Docker image:
+```bash
+docker pull vllm/vllm-openai:v0.17.1-cu130
+```
+
+4. Install systemd services for auto-restart:
 ```bash
 # Copy the optimized service files (included in the repository)
 sudo cp systemd/vllm-*.service /etc/systemd/system/
@@ -86,7 +107,30 @@ sudo systemctl daemon-reload
 sudo systemctl enable vllm-main vllm-coder vllm-vision
 sudo systemctl start vllm-main vllm-coder vllm-vision
 ```
+
 Services restart automatically on crash or reboot. The herd stays together.
+
+### Memory-Optimized Configuration
+
+The DGX Spark runs three vLLM services with carefully tuned memory distribution for the 128GB GB10 GPU:
+
+| Service | GPU Memory | Swap Space | Context | Prefix Caching |
+|---------|------------|------------|---------|----------------|
+| vllm-main | 45% (57.6GB) | 20GB | 262K | ✅ Enabled |
+| vllm-coder | 25% (32GB) | 20GB | 131K | ❌ Disabled |
+| vllm-vision | 3% (3.8GB) | - | 32K | ❌ Disabled |
+
+**Management commands:**
+```bash
+# Check service status
+sudo systemctl status vllm-main vllm-coder vllm-vision
+
+# Monitor GPU memory
+watch -n 2 nvidia-smi
+
+# View logs
+sudo journalctl -u vllm-main -f
+```
 
 ### Laptop (Development Machine) — The Observer
 
@@ -303,17 +347,37 @@ ssh $DGX_HOST nvidia-smi
 - State is saved after each phase in `gironimo/temp/.orchestrator_state.json`
 - Resume: `./gironimo-run --resume` (basic implementation)
 
+**Out of memory errors:**
+```bash
+# Check current memory distribution
+nvidia-smi
+
+# Verify services are using expected memory
+sudo systemctl status vllm-main vllm-coder vllm-vision
+
+# The optimized configuration uses:
+# - Main: 45% (57.6GB) with 262K context
+# - Coder: 25% (32GB) with 131K context (prefix caching disabled)
+# - Vision: 3% (3.8GB) with 32K context
+
+# If needed, adjust memory in /etc/systemd/system/vllm-*.service
+sudo nano /etc/systemd/system/vllm-coder.service
+# Change --gpu-memory-utilization 0.25 to a lower value
+sudo systemctl daemon-reload
+sudo systemctl restart vllm-coder
+```
+
 ## Models 🧠
 
 | Role | Model | Quantization | GPU Memory | Context | Purpose |
 |------|-------|--------------|------------|---------|---------|
-| 🦒 Main | Qwen3.5-35B-A3B-Instruct | FP8 | 45% (36GB) | 262K tokens | Spec, architecture, implementation reasoning |
-| ⚡ Coder | Qwen3-Coder-Next-int4-AutoRound | int4 | 25% (20GB) | 131K tokens | Code critique, revision, verification |
-| 👁️ Vision | Qwen3-VL-4B-Instruct | bfloat16 | 3% (2.4GB) | 32K tokens | UI validation via screenshots |
+| 🦒 Main | Qwen3.5-35B-A3B-Instruct | FP8 | 45% (57.6GB) | 262K tokens | Spec, architecture, implementation reasoning |
+| ⚡ Coder | Qwen3-Coder-Next-int4-AutoRound | int4 | 25% (32GB) | 131K tokens | Code critique, revision, verification |
+| 👁️ Vision | Qwen3-VL-4B-Instruct | bfloat16 | 3% (3.8GB) | 32K tokens | UI validation via screenshots |
 
-**Total:** 73% (58.4GB) GPU memory, leaving 27% (21.6GB) for KV cache and overhead.
+**Total:** 73% (93.4GB) GPU memory, leaving 27% (34.6GB) for KV cache and overhead.
 
-Selected for quality/speed tradeoff on DGX Spark with optimized memory distribution to run all three models simultaneously on a single GB10 GPU. Tall models for tall tasks.
+Selected for quality/speed tradeoff on DGX Spark with optimized memory distribution to run all three models simultaneously on the 128GB GB10 GPU. Tall models for tall tasks.
 
 ## Phase Limits ⏱️
 

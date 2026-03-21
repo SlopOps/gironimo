@@ -139,7 +139,7 @@ chmod +x download-models.sh
 ./download-models.sh
 
 ln -sf ~/models/qwen3.5-35b-a3b-fp8 /root/models/qwen3.5-35b-a3b-fp8
-ln -sf ~/models/qwen3-coder-next-fp8 /root/models/qwen3-coder-next-fp8
+ln -sf ~/models/glm-4.7-flash-awq-4bit /root/models/glm-4.7-flash-awq-4bit
 ln -sf ~/models/qwen3-vl-4b-instruct /root/models/qwen3-vl-4b-instruct
 ```
 

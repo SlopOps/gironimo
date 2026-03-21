@@ -198,7 +198,7 @@ Create these files in:
 
 ```ini
 [Unit]
-Description=vLLM Main Agent (Qwen3.5-35B-A3B-FP8) - Optimized
+Description=vLLM Main Agent (Qwen3.5-35B-A3B-FP8) - Docker
 After=network.target docker.service
 Requires=docker.service
 
@@ -229,7 +229,7 @@ WantedBy=multi-user.target
 
 ```ini
 [Unit]
-Description=vLLM Coder Agent (GLM-4.7-Flash-AWQ) - Optimized
+Description=vLLM Coder Agent (Qwen3-Coder-Next-int4-AutoRound) - Docker
 After=network.target docker.service vllm-main.service
 Requires=docker.service vllm-main.service
 
@@ -260,7 +260,7 @@ WantedBy=multi-user.target
 
 ```ini
 [Unit]
-Description=vLLM Vision Model (Qwen3-VL-4B-Instruct) - Optimized
+Description=vLLM Vision Model (Qwen3-VL-4B-Instruct) - Docker
 After=network.target docker.service vllm-main.service vllm-coder.service
 Requires=docker.service vllm-main.service vllm-coder.service
 

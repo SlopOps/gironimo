@@ -336,13 +336,43 @@ curl http://localhost:8002/v1/models
 
 ---
 
-# Performance Summary
-
 | Model | Tokens/sec | GPU Memory | Port |
 |-------|------------|------------|------|
 | Qwen3.5-35B-FP8 (Main) | **49.5 t/s** | 53.8 GB | 8000 |
 | GLM-4.7-Flash-AWQ (Coder) | **45.5 t/s** | 36.6 GB | 8001 |
 | Qwen3-VL-4B (Vision) | **21.9 t/s** | 12.8 GB | 8002 |
 | **Total** | - | **~103 GB** | - |
+
+---
+
+All services use these environment variables for performance and stability:
+
+| Variable | Main | Coder | Vision | Purpose |
+|----------|------|-------|--------|---------|
+| `OMP_NUM_THREADS` | 8 | 8 | 4 | Thread control |
+| `MKL_NUM_THREADS` | 8 | 8 | 4 | Intel MKL threading |
+| `NUMEXPR_NUM_THREADS` | 8 | 8 | 4 | NumExpr threading |
+| `TOKENIZERS_PARALLELISM` | false | false | false | Prevent tokenizer deadlocks |
+| `CUDA_DEVICE_MAX_CONNECTIONS` | 1 | 1 | 1 | Reduce scheduler thrash |
+| `VLLM_WORKER_MULTIPROC_METHOD` | spawn | spawn | spawn | Safe multiprocessing |
+| `VLLM_LOGGING_LEVEL` | warning | warning | warning | Reduce log noise |
+| `VLLM_MARLIN_USE_ATOMIC_ADD` | 1 | 1 | - | Marlin kernel optimization |
+| `VLLM_ATTENTION_BACKEND` | FLASHINFER | - | - | FlashInfer attention for Main |
+| `HF_HOME` | /root/.cache/huggingface | /root/.cache/huggingface | /root/.cache/huggingface | Hugging Face cache location |
+
+**Additional optimizations via command-line flags:**
+
+| Flag | Main | Coder | Vision | Purpose |
+|------|------|-------|--------|---------|
+| `--kv-cache-dtype fp8` | ✅ | ✅ | ✅ | 50% KV cache memory savings |
+| `--attention-backend flashinfer` | ✅ | ✅ | ✅ | Optimized attention kernels |
+| `--load-format fastsafetensors` | ✅ | ✅ | ✅ | 3-5x faster model loading |
+| `--enable-prefix-caching` | ✅ | ✅ | ✅ | Reuse KV cache across requests |
+| `--enable-auto-tool-choice` | ✅ | ✅ | ❌ | Tool/function calling support |
+| `--max-num-seqs` | 2 | 64 | 1 | Concurrent request handling |
+| `--gpu-memory-utilization` | 0.50 | 0.30 | 0.10 | GPU memory allocation |
+| `--kv-cache-memory-bytes` | 15 GB | - | 2.5 GB | Explicit KV cache allocation |
+
+---
 
 All three models run simultaneously on a single DGX Spark with 128 GB unified memory, leaving ~25 GB headroom for system processes and overhead.

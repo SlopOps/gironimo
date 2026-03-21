@@ -80,12 +80,12 @@ uv pip install vllm
 
 2. Install systemd services for auto-restart:
 ```bash
+# Copy the optimized service files (included in the repository)
 sudo cp systemd/vllm-*.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable vllm-main vllm-coder vllm-vision
 sudo systemctl start vllm-main vllm-coder vllm-vision
 ```
-
 Services restart automatically on crash or reboot. The herd stays together.
 
 ### Laptop (Development Machine) — The Observer
@@ -314,8 +314,6 @@ ssh $DGX_HOST nvidia-smi
 **Total:** 73% (58.4GB) GPU memory, leaving 27% (21.6GB) for KV cache and overhead.
 
 Selected for quality/speed tradeoff on DGX Spark with optimized memory distribution to run all three models simultaneously on a single GB10 GPU. Tall models for tall tasks.
-
-Selected for quality/speed tradeoff on DGX Spark 128GB VRAM. Tall models for tall tasks.
 
 ## Phase Limits ⏱️
 

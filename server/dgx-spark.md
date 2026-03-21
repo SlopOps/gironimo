@@ -103,14 +103,14 @@ cd spark-vllm-docker
 
 ```bash
 # Build with Transformers 5 support
-./build-and-copy.sh -t vllm-optimized --pre-tf
+./build-and-copy.sh -t vllm-optimized
 ```
 
 ## Build GLM-Optimized Image (for Coder Model)
 
 ```bash
 # Build with Transformers 5 and GLM patch baked in
-./build-and-copy.sh -t vllm-optimized-glm --pre-tf --apply-mod mods/fix-glm-4.7-flash-AWQ
+./build-and-copy.sh -t vllm-optimized-glm --pre-tf
 ```
 
 ## Verify Images

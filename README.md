@@ -305,11 +305,15 @@ ssh $DGX_HOST nvidia-smi
 
 ## Models 🧠
 
-| Role | Model | Quantization | Speed | Purpose |
-|------|-------|--------------|-------|---------|
-| 🦒 Main | Qwen3.5-35B-A3B-Instruct | FP8 | ~50 t/s | Spec, architecture, implementation reasoning |
-| ⚡ Coder | Qwen3-Coder-Next-int4-AutoRound | int4 | ~69 t/s | Code critique, revision, verification |
-| 👁️ Vision | Qwen3-VL-4B-Instruct | bfloat16 | ~60 t/s | UI validation via screenshots |
+| Role | Model | Quantization | GPU Memory | Context | Purpose |
+|------|-------|--------------|------------|---------|---------|
+| 🦒 Main | Qwen3.5-35B-A3B-Instruct | FP8 | 45% (36GB) | 262K tokens | Spec, architecture, implementation reasoning |
+| ⚡ Coder | Qwen3-Coder-Next-int4-AutoRound | int4 | 25% (20GB) | 131K tokens | Code critique, revision, verification |
+| 👁️ Vision | Qwen3-VL-4B-Instruct | bfloat16 | 3% (2.4GB) | 32K tokens | UI validation via screenshots |
+
+**Total:** 73% (58.4GB) GPU memory, leaving 27% (21.6GB) for KV cache and overhead.
+
+Selected for quality/speed tradeoff on DGX Spark with optimized memory distribution to run all three models simultaneously on a single GB10 GPU. Tall models for tall tasks.
 
 Selected for quality/speed tradeoff on DGX Spark 128GB VRAM. Tall models for tall tasks.
 

@@ -229,7 +229,7 @@ WantedBy=multi-user.target
 
 ```ini
 [Unit]
-Description=vLLM Coder Agent (Qwen3-Coder-Next-int4-AutoRound) - Docker
+Description=vLLM Coder Agent (GLM-4.7-Flash-AWQ) - Docker
 After=network.target docker.service vllm-main.service
 Requires=docker.service vllm-main.service
 

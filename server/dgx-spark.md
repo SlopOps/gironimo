@@ -90,6 +90,41 @@ hf auth login
 
 ---
 
+# Build Optimized Docker Images
+
+Clone the spark-vllm-docker repository which contains optimized builds for DGX Spark:
+
+```bash
+git clone https://github.com/eugr/spark-vllm-docker.git
+cd spark-vllm-docker
+```
+
+## Build Main Optimized Image (for Main and Vision Models)
+
+```bash
+# Build with Transformers 5 support
+./build-and-copy.sh -t vllm-optimized --pre-tf
+```
+
+## Build GLM-Optimized Image (for Coder Model)
+
+```bash
+# Build with Transformers 5 and GLM patch baked in
+./build-and-copy.sh -t vllm-optimized-glm --pre-tf --apply-mod mods/fix-glm-4.7-flash-AWQ
+```
+
+## Verify Images
+
+```bash
+docker images | grep vllm-optimized
+```
+
+You should see:
+- `vllm-optimized` - for main and vision models
+- `vllm-optimized-glm` - for GLM coder model
+
+---
+
 # Persistent Model Storage
 
 ```
@@ -101,8 +136,8 @@ hf auth login
 ```
 ~/models/
 ├── qwen3.5-35b-a3b-fp8/
-├── qwen3-coder-next-int4/
-└── qwen3-vl-4b/
+├── glm-4.7-flash-awq-4bit/
+└── qwen3-vl-4b-instruct/
 ```
 
 ---
@@ -125,8 +160,9 @@ if ! hf whoami > /dev/null 2>&1; then
     exit 1
 fi
 
+# Download models
 hf download Qwen/Qwen3.5-35B-A3B-FP8 --local-dir "$MODEL_DIR/qwen3.5-35b-a3b-fp8"
-hf download Qwen/Qwen3-Coder-Next-FP8 --local-dir "$MODEL_DIR/qwen3-coder-next-fp8"
+hf download cyankiwi/GLM-4.7-Flash-AWQ-4bit --local-dir "$MODEL_DIR/glm-4.7-flash-awq-4bit"
 hf download Qwen/Qwen3-VL-4B-Instruct --local-dir "$MODEL_DIR/qwen3-vl-4b-instruct"
 
 du -sh "$MODEL_DIR"
@@ -137,18 +173,15 @@ Run the script:
 ```bash
 chmod +x download-models.sh
 ./download-models.sh
-
-ln -sf ~/models/qwen3.5-35b-a3b-fp8 /root/models/qwen3.5-35b-a3b-fp8
-ln -sf ~/models/glm-4.7-flash-awq-4bit /root/models/glm-4.7-flash-awq-4bit
-ln -sf ~/models/qwen3-vl-4b-instruct /root/models/qwen3-vl-4b-instruct
 ```
 
----
-
-# Pull vLLM Image
+## Create Symlinks for Docker Access
 
 ```bash
-docker pull vllm/vllm-openai:v0.17.1-cu130
+# Create symlinks from /root/models to actual model locations
+sudo ln -sf ~/models/qwen3.5-35b-a3b-fp8 /root/models/qwen3.5-35b-a3b-fp8
+sudo ln -sf ~/models/glm-4.7-flash-awq-4bit /root/models/glm-4.7-flash-awq-4bit
+sudo ln -sf ~/models/qwen3-vl-4b-instruct /root/models/qwen3-vl-4b-instruct
 ```
 
 ---
@@ -165,7 +198,7 @@ Create these files in:
 
 ```ini
 [Unit]
-Description=vLLM Main Agent (Qwen3.5-35B-A3B-FP8) - Docker
+Description=vLLM Main Agent (Qwen3.5-35B-A3B-FP8) - Optimized
 After=network.target docker.service
 Requires=docker.service
 
@@ -188,13 +221,15 @@ ExecStop=/usr/bin/docker stop vllm-main || true
 WantedBy=multi-user.target
 ```
 
+**Performance:** ~49 t/s | **Memory:** ~42.7 GB
+
 ---
 
 ## vllm-coder.service
 
 ```ini
 [Unit]
-Description=vLLM Coder Agent (Qwen3-Coder-Next-int4-AutoRound) - Docker
+Description=vLLM Coder Agent (GLM-4.7-Flash-AWQ) - Optimized
 After=network.target docker.service vllm-main.service
 Requires=docker.service vllm-main.service
 
@@ -217,13 +252,15 @@ ExecStop=/usr/bin/docker stop vllm-coder || true
 WantedBy=multi-user.target
 ```
 
+**Performance:** ~45 t/s | **Memory:** ~36.1 GB
+
 ---
 
 ## vllm-vision.service
 
 ```ini
 [Unit]
-Description=vLLM Vision Model (Qwen3-VL-4B-Instruct) - Docker
+Description=vLLM Vision Model (Qwen3-VL-4B-Instruct) - Optimized
 After=network.target docker.service vllm-main.service vllm-coder.service
 Requires=docker.service vllm-main.service vllm-coder.service
 
@@ -246,9 +283,11 @@ ExecStop=/usr/bin/docker stop vllm-vision || true
 WantedBy=multi-user.target
 ```
 
+**Performance:** ~22 t/s | **Memory:** ~13.1 GB
+
 ---
 
-## Enable + Start
+# Enable + Start
 
 ```bash
 sudo systemctl daemon-reload
@@ -258,7 +297,7 @@ sudo systemctl start vllm-main vllm-coder vllm-vision
 
 ---
 
-## Check Status
+# Check Status
 
 ```bash
 sudo systemctl status vllm-main vllm-coder vllm-vision
@@ -266,7 +305,7 @@ sudo systemctl status vllm-main vllm-coder vllm-vision
 
 ---
 
-## View Logs
+# View Logs
 
 ```bash
 # Systemd logs
@@ -282,7 +321,7 @@ docker logs vllm-vision -f
 
 ---
 
-## Test API
+# Test API
 
 ```bash
 # Test main model
@@ -297,10 +336,13 @@ curl http://localhost:8002/v1/models
 
 ---
 
-## Firewall (if needed)
+# Performance Summary
 
-```bash
-sudo ufw allow 8000/tcp
-sudo ufw allow 8001/tcp
-sudo ufw allow 8002/tcp
-```
+| Model | Tokens/sec | GPU Memory | Port |
+|-------|------------|------------|------|
+| Qwen3.5-35B-FP8 (Main) | ~49 t/s | 42.7 GB | 8000 |
+| GLM-4.7-Flash-AWQ (Coder) | ~45 t/s | 36.1 GB | 8001 |
+| Qwen3-VL-4B (Vision) | ~22 t/s | 13.1 GB | 8002 |
+| **Total** | - | **~92 GB** | - |
+
+All three models run simultaneously on a single DGX Spark with 96 GB unified memory.
